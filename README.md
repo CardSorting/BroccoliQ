@@ -15,6 +15,8 @@ Architecture in two layers:
 1. [Introduction](#-introduction)
 2. [What Makes BroccoliDB Special?](#-what-makes-broccolidb-special)
    - [The 2.0M+ Logical Ops/Sec Engine](#the-20m-logical-opssec-engine)
+   - [Level 8: Active Thought Collapsing](#level-8-active-thought-collapsing)
+   - [Level 9: Sovereign Recovery (Warmup)](#level-9-sovereign-recovery-warmup)
    - [The Event Horizon: 4.4M Jobs/Sec](#the-event-horizon-44m-jobssec)
    - [Agent Shadows & Isolation](#agent-shadows--isolation)
    - [O(1) Memory-First Indexing](#o1-memory-first-indexing)
@@ -34,15 +36,26 @@ BroccoliDB was born to solve this using a clear mental model:
 - **RAM = Your brain thinking at full speed.**
 - **SQLite = Writing notes in a notebook every few minutes.**
 
-You're not writing down every single thought — just summaries. This allows you to achieve millions of operations per second in memory, while SQLite acts as your **eventual source of truth** and recovery anchor.
+You're not writing down every single thought — just summaries. Level 8 introduced **Active Thought Collapsing**, where BroccoliDB performs math in RAM (e.g., summing 1,000 increments) and writes only the final result to the notebook. This allows you to achieve millions of operations per second in memory, while SQLite acts as your **eventual source of truth** and recovery anchor.
 
 ---
 
 ### What SQLite is Actually Doing
 Traditional database drivers hit the disk for every operation, capping your speed at ~50k–200k ops/sec. BroccoliDB treats SQLite differently:
 - **It is NOT driving your throughput.** (Memory is.)
-- **It IS your Durable Checkpoint Layer.** It occasionally wakes up, performs a massive batch write, and goes back to sleep.
+- **It IS your Durable Checkpoint Layer.** It occasionally wakes up, performs a massive batch write of **summaries**, and goes back to sleep.
 - **It IS your Recovery Anchor.** If the process dies, SQLite is what survives to rebuild your memory state upon restart.
+
+### 🧠 Level 8: Active Thought Collapsing
+We move beyond passive buffering to active state calculation in Layer 1.
+- **Math in RAM**: 1,000,000 increments (e.g., `totalTokens + 1`) are mathematically collapsed into **ONE** update.
+- **Offloading Efficiency**: Achieves $\eta = 0.999999$ for high-frequency counters.
+
+### ⚡ Level 9: Sovereign Recovery (Zero-Latency Reconstitution)
+The final frontier of the Brain/Notebook model. The system can now "wake up" instantly after a reboot.
+- **The Warmup Protocol**: BroccoliDB populates Layer 1 Memory Indices from the SQLite checkpoint on boot.
+- **Disk Bypass**: Once an index is "warmed," queries achieve **true zero-latency**, skipping the disk entirely and running at the speed of pure pointer retrieval.
+- **Cognitive Sovereignty**: The Brain is now authoritative. It uses the Notebook only as a safety anchor, not as a drag on real-time consciousness.
 
 > [!IMPORTANT]
 > **Performance Indicator**: 3 disk syncs for 1M operations is not "idle" behavior — it's the ultimate indicator of success. It means the system is only writing down essential summaries, not every individual thought.

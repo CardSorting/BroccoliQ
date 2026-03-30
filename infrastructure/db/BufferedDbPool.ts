@@ -93,6 +93,7 @@ export class BufferedDbPool {
   // Level 7: Event Horizon Status Index (O(1) Query Mapping)
   private activeIndex = new Map<keyof Schema, Map<string, Set<WriteOp>>>();
   private inFlightIndex = new Map<keyof Schema, Map<string, Set<WriteOp>>>();
+  private warmedIndices = new Set<string>(); // Level 9: Authoritative Memory Indices
 
   constructor() {
     this.startFlushLoop();
@@ -499,7 +500,7 @@ export class BufferedDbPool {
 
     const canBatchIntoSingleStatement = group.every(
       (op) =>
-        JSON.stringify(op.values) === JSON.stringify(first.values) &&
+        this.isSameValues(op.values as any, first.values as any) &&
         op.where &&
         !Array.isArray(op.where) &&
         op.where.column === 'id' &&
@@ -555,25 +556,30 @@ export class BufferedDbPool {
     try {
       const db = await this.ensureDb();
       const conditions = normalizeWhere(where);
+      const statusCond = conditions.find(c => (c.column === 'status' || c.column === 'type') && (c.operator === '=' || !c.operator));
+      const indexKey = statusCond ? `${table as string}:${statusCond.column}:${statusCond.value}` : null;
+      const isWarmed = indexKey && this.warmedIndices.has(indexKey);
 
-      let query = db.selectFrom(table).selectAll();
-      for (const cond of conditions) {
-        const opStr = cond.operator || '=';
-        if (Array.isArray(cond.value)) {
-          query = (query as any).where(cond.column, 'in', cond.value);
-        } else {
-          query = (query as any).where(cond.column, opStr, cond.value);
+      let diskResults: Schema[T][] = [];
+      if (!isWarmed) {
+        let query = db.selectFrom(table).selectAll();
+        for (const cond of conditions) {
+          const opStr = cond.operator || '=';
+          if (Array.isArray(cond.value)) {
+            query = (query as any).where(cond.column, 'in', cond.value);
+          } else {
+            query = (query as any).where(cond.column, opStr, cond.value);
+          }
         }
-      }
 
-      if (options?.orderBy) {
-        query = (query as any).orderBy(options.orderBy.column, options.orderBy.direction);
+        if (options?.orderBy) {
+          query = (query as any).orderBy(options.orderBy.column, options.orderBy.direction);
+        }
+        if (options?.limit) {
+          query = (query as any).limit(options.limit);
+        }
+        diskResults = (await query.execute()) as Schema[T][];
       }
-      if (options?.limit) {
-        query = (query as any).limit(options.limit);
-      }
-
-      const diskResults = (await query.execute()) as Schema[T][];
 
       const applyOps = (ops: WriteOp[], sourceIndex: Map<string, Set<WriteOp>> | undefined, target: Schema[T][]) => {
         // Level 7: Fast-Path Status Indexing
@@ -731,13 +737,34 @@ export class BufferedDbPool {
     const updateCache = new Map<string, number>();
 
     for (const op of ops) {
-      if (op.dedupKey) {
+      if (op.type === 'update' && op.dedupKey) {
         const existingIdx = updateCache.get(op.dedupKey);
-        if (!op.hasIncrements && existingIdx !== undefined) {
+        if (existingIdx !== undefined) {
           const targetOp = coalescedOps[existingIdx];
-          if (targetOp) targetOp.values = { ...(targetOp.values || {}), ...(op.values || {}) };
-          continue;
-        } else if (!op.hasIncrements) {
+          if (targetOp && targetOp.values && op.values) {
+            for (const [key, val] of Object.entries(op.values)) {
+              const existingVal: any = targetOp.values[key];
+              const isInc = (v: any) => v && typeof v === 'object' && (v as any)._type === 'increment';
+
+              if (isInc(val)) {
+                if (isInc(existingVal)) {
+                  existingVal.value += (val as any).value;
+                } else if (typeof existingVal === 'number') {
+                  targetOp.values[key] = existingVal + (val as any).value;
+                } else {
+                  targetOp.values[key] = { ...(val as any) }; // Clone increment
+                }
+              } else {
+                targetOp.values[key] = val; // Raw value overrides previous state
+              }
+            }
+            // Recalculate hasIncrements
+            targetOp.hasIncrements = Object.values(targetOp.values).some(
+              (v: any) => v && typeof v === 'object' && v._type === 'increment',
+            );
+            continue;
+          }
+        } else {
           updateCache.set(op.dedupKey, coalescedOps.length);
         }
       }
@@ -851,7 +878,16 @@ export class BufferedDbPool {
       }
       await query.execute();
     } else if (op.type === 'update' && op.values) {
-      let query = trx.updateTable(op.table).set(op.values as any);
+      const sets: Record<string, any> = {};
+      for (const [k, v] of Object.entries(op.values)) {
+        if (this.isIncrement(v)) {
+          sets[k] = sql`${sql.ref(k)} + ${v.value}`;
+        } else {
+          sets[k] = v;
+        }
+      }
+
+      let query = trx.updateTable(op.table as any).set(sets);
       for (const cond of conditions) {
         const opStr = cond.operator || '=';
         if (Array.isArray(cond.value)) {
@@ -893,6 +929,75 @@ export class BufferedDbPool {
         },
       },
     };
+  }
+
+  private isSameValues(a: Record<string, any>, b: Record<string, any>): boolean {
+    if (a === b) return true;
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+      if (a[key] !== b[key]) {
+        // Handle Increment objects specifically
+        const valA = a[key];
+        const valB = b[key];
+        if (this.isIncrement(valA) && this.isIncrement(valB)) {
+          if (valA.value !== valB.value) return false;
+        } else {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Level 9: Sovereign Recovery (Warmup)
+   * Populates the in-memory Level 7 indexes from the Level 2 Checkpoint (Disk).
+   * This ensures the "Brain" wakes up at full speed after a reboot.
+   */
+  public async warmupTable<T extends keyof Schema>(
+    table: T,
+    statusCol: string,
+    statusValue: string
+  ): Promise<number> {
+    const db = await this.ensureDb();
+    const rows = await db
+      .selectFrom(table as any)
+      .where(statusCol as any, '=', statusValue as any)
+      .selectAll()
+      .execute();
+
+    if (rows.length === 0) return 0;
+
+    let tableIndex = this.activeIndex.get(table as any);
+    if (!tableIndex) {
+      tableIndex = new Map();
+      this.activeIndex.set(table as any, tableIndex);
+    }
+
+    const key = `${statusCol}:${statusValue}`;
+    let set = tableIndex.get(key);
+    if (!set) {
+      set = new Set();
+      tableIndex.set(key, set);
+    }
+
+    // Convert disk rows into a "Virtual WriteOp" to satisfy Level 1 Select logic
+    for (const row of rows) {
+      const op: WriteOp = {
+        type: 'insert',
+        table: table as any,
+        values: row as any,
+        hasIncrements: false
+      };
+      set.add(op);
+    }
+
+    // Level 9: Mark as Authoritative
+    this.warmedIndices.add(`${table as string}:${statusCol}:${statusValue}`);
+
+    return rows.length;
   }
 
   public async stop() {
