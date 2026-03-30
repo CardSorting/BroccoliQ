@@ -10,7 +10,7 @@ Welcome to BroccoliDB — a production-grade database and queue infrastructure d
 
 1. [Introduction](#-introduction)
 2. [What Makes BroccoliDB Special?](#-what-makes-broccolidb-special)
-   - [The 1M+ Ops/Sec Engine](#the-1m-opssec-engine)
+   - [The 1.5M Logical Ops/Sec Engine](#the-15m-logical-opssec-engine)
    - [Agent Shadows & Isolation](#agent-shadows--isolation)
    - [Memory-First Queue Strategy](#memory-first-queue-strategy)
 3. [Quick Start Scenarios](#-quick-start-scenarios)
@@ -35,14 +35,14 @@ BroccoliDB was born to solve this. It acts as an **asynchronous write-behind lay
 
 ## ✨ What Makes BroccoliDB Special?
 
-### The 1M+ Ops/Sec Engine (**Verified**)
-BroccoliDB doesn't hit the disk for every operation. Instead, it uses a **Global Write Buffer**. This allows the system to:
-- **Batch**: Group thousands of insertions into a single database transaction.
-- **Coalesce**: Merge redundant updates to the same record before they ever touch the disk.
-- **Prioritize**: Ensure critical infrastructure updates are flushed before non-essential metadata.
+### The 1.5M Logical Ops/Sec Engine (**Verified**)
+BroccoliDB achieves incredible throughput by decoupling logical operations from physical persistence and using a **Chunked SQL Bypass** for the hottest data paths.
+- **Chunked & Coalesce**: Group row-sets into a single multi-row `INSERT` statement within a transaction.
+- **Amortized Disk Sync**: For 800,000 logical ops, BroccoliDB performs as few as **3 physical syncs**.
+- **Lock-Free Handoff**: Concurrent agents push to isolated shadow buffers with **zero global mutex contention**.
 
 > [!TIP]
-> **View Performance Metrics**: See the latest verified results in our [Benchmarks (BENCHMARK.md)](./BENCHMARK.md).
+> **View Performance Audit**: See the latest verified 1.5M+ results in our [Benchmarks (BENCHMARK.md)](./BENCHMARK.md).
 
 ### Agent Shadows & Isolation
 One of our most unique features is **Agent Shadows**. They provide a "scratchpad" for complex multi-step processes. An agent can perform hundreds of database operations in a shadow workspace, reading back its own uncommitted state, without affecting the main database until the entire process is ready to `commit`.

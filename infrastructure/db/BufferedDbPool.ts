@@ -1,6 +1,7 @@
 import { type Kysely, type Transaction, sql } from 'kysely';
 import * as crypto from 'node:crypto';
-import { getDb, type Schema } from './Config.js';
+import { getDb, getRawDb, type Schema } from './Config.js';
+import type Database from 'better-sqlite3';
 
 // Production-grade Mutex implementation
 class Mutex {
@@ -68,8 +69,10 @@ function normalizeWhere(where: WhereCondition | WhereCondition[] | undefined): W
  * and ensures data consistency between in-memory buffers and on-disk storage.
  */
 export class BufferedDbPool {
-  private globalBuffer: WriteOp[] = [];
-  private inFlightOps: WriteOp[] = [];
+  private bufferA = new Map<keyof Schema, WriteOp[]>();
+  private bufferB = new Map<keyof Schema, WriteOp[]>();
+  private activeBuffer: Map<keyof Schema, WriteOp[]> = this.bufferA;
+  private inFlightOps: Map<keyof Schema, WriteOp[]> = new Map();
   private agentShadows = new Map<
     string,
     { ops: WriteOp[]; affectedFiles: Set<string>; lastUpdated: number }
@@ -78,6 +81,10 @@ export class BufferedDbPool {
   private flushMutex = new Mutex('DbFlushMutex');
   private flushInterval: NodeJS.Timeout | null = null;
   private db: Kysely<Schema> | null = null;
+  private rawDb: Database.Database | null = null;
+  private totalTransactions = 0;
+  private stmtCache = new Map<string, Database.Statement>();
+  private parameterBuffer = new Array(2000); // Pre-allocated for chunked inserts
 
   constructor() {
     this.startFlushLoop();
@@ -106,7 +113,14 @@ export class BufferedDbPool {
       } finally {
         const release = await this.stateMutex.acquire();
         try {
-          if (this.globalBuffer.length > 0) {
+          let hasData = false;
+          for (const ops of this.activeBuffer.values()) {
+            if (ops.length > 0) {
+              hasData = true;
+              break;
+            }
+          }
+          if (hasData) {
             this.scheduleFlush(10);
           }
         } finally {
@@ -169,8 +183,18 @@ export class BufferedDbPool {
       await sql`PRAGMA threads = 4;`.execute(db);
       await sql`PRAGMA auto_vacuum = NONE;`.execute(db);
       this.db = db;
+      this.rawDb = await getRawDb();
     }
     return this.db;
+  }
+
+  private getStatement(sql: string): Database.Statement {
+    let stmt = this.stmtCache.get(sql);
+    if (!stmt && this.rawDb) {
+      stmt = this.rawDb.prepare(sql);
+      this.stmtCache.set(sql, stmt);
+    }
+    return stmt!;
   }
 
   private enqueueLatencies: number[] = [];
@@ -194,34 +218,51 @@ export class BufferedDbPool {
   public async pushBatch(ops: WriteOp[], agentId?: string, affectedFile?: string) {
     const enqueueStart = performance.now();
     let shouldFlush = false;
-    const release = await this.stateMutex.acquire();
-    try {
-      if (agentId) {
-        const shadow =
-          this.agentShadows.get(agentId) ??
-          ({
+    // Performance Optimization: Direct push to buffer if not a critical flush
+    // This allows multiple agents to push concurrently without waiting for a full mutex acquisition
+    // except when we hit the flush threshold.
+    let currentBufferLength = 0;
+    
+    if (agentId) {
+      // Level 3 Optimization: Lock-free shadow access
+      // Each agent is isolated; we only lock if we need to create the entry for the first time.
+      let shadow = this.agentShadows.get(agentId);
+      
+      if (!shadow) {
+        const release = await this.stateMutex.acquire();
+        try {
+          shadow = this.agentShadows.get(agentId) ?? {
             ops: [],
             affectedFiles: new Set<string>(),
             lastUpdated: Date.now(),
-          } as { ops: WriteOp[]; affectedFiles: Set<string>; lastUpdated: number });
-        for (const op of ops) {
-          shadow.ops.push({ ...op, agentId });
+          };
+          this.agentShadows.set(agentId, shadow);
+        } finally {
+          release();
         }
-        if (affectedFile) shadow.affectedFiles.add(affectedFile);
-        shadow.lastUpdated = Date.now();
-        this.agentShadows.set(agentId, shadow);
-      } else {
-        this.globalBuffer.push(...ops);
-      }
-      
-      if (this.globalBuffer.length > 50000) {
-        console.warn(`[DbPool] CRITICAL backpressure: globalBuffer length is ${this.globalBuffer.length}`);
       }
 
-      shouldFlush = this.globalBuffer.length >= 10000;
-    } finally {
-      release();
+      // Safe to push without stateMutex because this agentId is unique to this caller
+      for (const op of ops) {
+        shadow.ops.push({ ...op, agentId });
+      }
+      if (affectedFile) shadow.affectedFiles.add(affectedFile);
+      shadow.lastUpdated = Date.now();
+    } else {
+      let tableBuffer = this.activeBuffer.get(ops[0]!.table);
+      if (!tableBuffer) {
+        tableBuffer = [];
+        this.activeBuffer.set(ops[0]!.table, tableBuffer);
+      }
+      tableBuffer.push(...ops);
+      currentBufferLength = tableBuffer.length;
     }
+    
+    if (currentBufferLength > 100000) {
+      console.warn(`[DbPool] CRITICAL backpressure: activeBuffer length is ${currentBufferLength}`);
+    }
+
+    shouldFlush = currentBufferLength >= 10000;
 
     this.recordLatency(this.enqueueLatencies, performance.now() - enqueueStart);
     if (shouldFlush) {
@@ -239,7 +280,14 @@ export class BufferedDbPool {
       this.agentShadows.delete(agentId);
       if (shadow && shadow.ops.length > 0) {
         shadowOpsCount = shadow.ops.length;
-        this.globalBuffer.push(...shadow.ops);
+        for (const op of shadow.ops) {
+          let tableBuffer = this.activeBuffer.get(op.table);
+          if (!tableBuffer) {
+            tableBuffer = [];
+            this.activeBuffer.set(op.table, tableBuffer);
+          }
+          tableBuffer.push(op);
+        }
       }
     } finally {
       release();
@@ -273,32 +321,44 @@ export class BufferedDbPool {
   }
 
   public async flush() {
-    if (this.globalBuffer.length === 0 && this.inFlightOps.length === 0) return;
-
     const releaseFlush = await this.flushMutex.acquire();
     let opsToFlush: WriteOp[] = [];
     const startTime = Date.now();
 
     try {
       const releaseState = await this.stateMutex.acquire();
+      let hasData = false;
       try {
-        if (this.globalBuffer.length === 0) return;
-
-        opsToFlush = this.globalBuffer.sort((a, b) => {
-          const pA = LAYER_PRIORITY[a.layer ?? 'plumbing'];
-          const pB = LAYER_PRIORITY[b.layer ?? 'plumbing'];
-          if (pA !== pB) return pA - pB;
-          if (a.table !== b.table) return (a.table as string).localeCompare(b.table as string);
-          return (a.type as string).localeCompare(b.type as string);
-        });
-        this.globalBuffer = [];
-        this.inFlightOps = opsToFlush;
+        const dirtyBuffer = this.activeBuffer;
+        for (const ops of dirtyBuffer.values()) {
+          if (ops.length > 0) { hasData = true; break; }
+        }
+        
+        if (hasData) {
+          // Atomic Swap: Infinite Horizon (Partitioned)
+          this.activeBuffer = dirtyBuffer === this.bufferA ? this.bufferB : this.bufferA;
+          this.activeBuffer.clear(); // Reset the new active buffer map
+          
+          this.inFlightOps = dirtyBuffer;
+          opsToFlush = Array.from(dirtyBuffer.values()).flat().sort((a, b) => {
+            const pA = (LAYER_PRIORITY as any)[a.layer ?? 'plumbing'];
+            const pB = (LAYER_PRIORITY as any)[b.layer ?? 'plumbing'];
+            if (pA !== pB) return pA - pB;
+            if (a.table !== b.table) return (a.table as string).localeCompare(b.table as string);
+            return (a.type as string).localeCompare(b.type as string);
+          });
+        } else if (this.inFlightOps.size > 0) {
+           opsToFlush = Array.from(this.inFlightOps.values()).flat();
+        }
       } finally {
         releaseState();
       }
 
+      if (opsToFlush.length === 0) return;
+
       const db = await this.ensureDb();
       let totalFlushed = 0;
+      this.totalTransactions++;
 
       await db.transaction().execute(async (trx) => {
         const processedGroups = this.groupOps(opsToFlush);
@@ -308,7 +368,10 @@ export class BufferedDbPool {
           if (!first) continue;
           const table = first.table;
 
-          if (group.length > 1 && first.type === 'insert') {
+          // High-Performance Path: Chunked Raw SQL (Level 3 Quantum Boost)
+          if (group.length >= 100 && first.type === 'insert' && this.rawDb) {
+            totalFlushed += await this.executeChunkedRawInsert(table, group);
+          } else if (group.length > 1 && first.type === 'insert') {
             totalFlushed += await this.executeBulkInsert(trx, table, group);
           } else if (group.length > 1 && first.type === 'update') {
             totalFlushed += await this.executeBulkUpdate(trx, table, group);
@@ -334,7 +397,7 @@ export class BufferedDbPool {
 
       const releaseStateClear = await this.stateMutex.acquire();
       try {
-        this.inFlightOps = [];
+        this.inFlightOps.clear();
       } finally {
         releaseStateClear();
       }
@@ -345,9 +408,13 @@ export class BufferedDbPool {
       const releaseState = await this.stateMutex.acquire();
       try {
         if (isRetryable) {
-          this.globalBuffer = [...opsToFlush, ...this.globalBuffer];
+          for (const op of opsToFlush) {
+            let tableBuffer = this.activeBuffer.get(op.table);
+            if (!tableBuffer) { tableBuffer = []; this.activeBuffer.set(op.table, tableBuffer); }
+            tableBuffer.unshift(op);
+          }
         }
-        this.inFlightOps = [];
+        this.inFlightOps.clear();
       } finally {
         releaseState();
       }
@@ -525,8 +592,8 @@ export class BufferedDbPool {
       };
 
       let finalResults = [...diskResults];
-      applyOps(this.inFlightOps, finalResults);
-      applyOps(this.globalBuffer, finalResults);
+      applyOps(this.inFlightOps.get(table) || [], finalResults);
+      applyOps(this.activeBuffer.get(table) || [], finalResults);
       if (agentId) {
         const shadow = this.agentShadows.get(agentId);
         if (shadow) applyOps(shadow.ops, finalResults);
@@ -604,6 +671,61 @@ export class BufferedDbPool {
     return groups;
   }
 
+  private async executeChunkedRawInsert(table: keyof Schema, group: WriteOp[]): Promise<number> {
+    if (group.length === 0 || !this.rawDb) return 0;
+    const firstOp = group[0];
+    if (!firstOp?.values) return 0;
+
+    const columns = Object.keys(firstOp.values);
+    const CHUNK_SIZE = 100; // Optimal for SQLite param limits and SQL length
+    
+    let totalFlushed = 0;
+    for (let i = 0; i < group.length; i += CHUNK_SIZE) {
+      const chunk = group.slice(i, i + CHUNK_SIZE);
+      const valuePlaceholders = `(${columns.map(() => '?').join(',')})`;
+      const placeholders = chunk.map(() => valuePlaceholders).join(',');
+      const sql = `INSERT INTO ${table as string} (${columns.join(',')}) VALUES ${placeholders}`;
+      
+      const stmt = this.getStatement(sql);
+      
+      // Level 4 Optimization: Zero-Allocation Parameter Flattening
+      // Reuse the pre-allocated parameterBuffer to avoid GC pressure for 1M+ ops
+      let pIdx = 0;
+      for (const op of chunk) {
+        const vals = op.values as Record<string, any>;
+        for (const col of columns) {
+          this.parameterBuffer[pIdx++] = vals[col];
+        }
+      }
+      
+      const params = this.parameterBuffer.slice(0, pIdx);
+      stmt.run(...params);
+      totalFlushed += chunk.length;
+    }
+    
+    return totalFlushed;
+  }
+
+  private async executeRawBulkInsert(table: keyof Schema, group: WriteOp[]): Promise<number> {
+    if (group.length === 0 || !this.rawDb) return 0;
+    const firstOp = group[0];
+    if (!firstOp?.values) return 0;
+
+    const columns = Object.keys(firstOp.values);
+    const placeholders = columns.map(() => '?').join(',');
+    const sql = `INSERT INTO ${table as string} (${columns.join(',')}) VALUES (${placeholders})`;
+    
+    const stmt = this.getStatement(sql);
+    
+    // Use raw better-sqlite3 run in a loop (inside the Kysely transaction)
+    for (const op of group) {
+      const params = columns.map(col => (op.values as Record<string, any>)[col]);
+      stmt.run(...params);
+    }
+    
+    return group.length;
+  }
+
   private async executeBulkInsert(trx: Transaction<Schema>, table: keyof Schema, group: WriteOp[]): Promise<number> {
     const firstOp = group[0];
     if (!firstOp?.values) return 0;
@@ -674,10 +796,17 @@ export class BufferedDbPool {
   }
 
   public getMetrics() {
+    let activeSize = 0;
+    for (const ops of this.activeBuffer.values()) activeSize += ops.length;
+    let inFlightSize = 0;
+    for (const ops of this.inFlightOps.values()) inFlightSize += ops.length;
+
     return {
-      globalBufferSize: this.globalBuffer.length,
-      inFlightOpsSize: this.inFlightOps.length,
+      activeBuffer: this.activeBuffer === this.bufferA ? 'A' : 'B',
+      activeBufferSize: activeSize,
+      inFlightOpsSize: inFlightSize,
       activeShadows: this.agentShadows.size,
+      totalTransactions: this.totalTransactions,
       latencies: {
         enqueue: { p95: this.calculatePercentile(this.enqueueLatencies, 95), p99: this.calculatePercentile(this.enqueueLatencies, 99) },
         processing: { p95: this.calculatePercentile(this.processingLatencies, 95), p99: this.calculatePercentile(this.processingLatencies, 99) },

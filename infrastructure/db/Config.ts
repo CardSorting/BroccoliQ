@@ -209,6 +209,7 @@ export interface Schema {
 }
 
 let _db: Kysely<Schema> | null = null;
+let _rawDb: Database.Database | null = null;
 let _dbPath: string | null = null;
 
 export function setDbPath(dbPath: string) {
@@ -225,9 +226,10 @@ export async function getDb(): Promise<Kysely<Schema>> {
   const dbDir = path.dirname(_dbPath);
   if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
+  _rawDb = new Database(_dbPath);
   _db = new Kysely<Schema>({
     dialect: new SqliteDialect({
-      database: new Database(_dbPath),
+      database: _rawDb,
     }),
   });
 
@@ -509,4 +511,9 @@ export async function getDb(): Promise<Kysely<Schema>> {
   await execute(`CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agentId)`);
 
   return _db;
+}
+
+export async function getRawDb(): Promise<Database.Database> {
+  if (!_rawDb) await getDb();
+  return _rawDb!;
 }

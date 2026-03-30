@@ -37,7 +37,7 @@ export class SqliteQueue<T> {
   private wakeUpEmitter = new EventEmitter();
 
   private pendingMemoryBuffer: QueueJob<T>[] = [];
-  private maxMemoryBufferSize = 5000; // Larger buffer for higher throughput
+  private maxMemoryBufferSize = 100000; // Infinite Horizon scale
 
   private visibilityTimeoutMs: number;
   private pruneDoneAgeMs: number;
@@ -160,8 +160,9 @@ export class SqliteQueue<T> {
    * Prioritizes Memory-First buffer over DB polling.
    */
   async dequeueBatch(limit: number): Promise<QueueJob<T>[]> {
+    const memoryJobsCount = this.pendingMemoryBuffer.length;
     // Memory-First: Try local buffer first (with fast-path status update)
-    if (this.pendingMemoryBuffer.length > 0) {
+    if (memoryJobsCount > 0) {
       const jobs = this.pendingMemoryBuffer.splice(0, limit);
       const ids = jobs.map((j) => j.id);
       const nowMs = Date.now();
