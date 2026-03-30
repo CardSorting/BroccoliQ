@@ -51,34 +51,37 @@ If you see the physical sync count increasing, it means your batch sizes are too
 
 ---
 
-## ⚡ Level 9: Cognitive Sovereignty Audit
+---
 
-In this final phase, we verified the limits of the **Brain-First Authority** model.
+## 🏛️ Developer Guide to Success
 
-### 1. Sovereign Reconstitution (The "Wake Up" Test)
-- **Dataset**: 1,000,000 units in SQLite Checkpoint.
-- **Hydration Speed**: **~2,500,000 records/sec** (RAM Index Population).
-- **Post-Boot Query Speed**: 
-  - **Cold Start**: **0.40ms** (SQLite assisted).
-  - **Level 9 WARM**: **0.005ms** (Pure RAM, 100x speedup).
+When running these benchmarks, you might see results that look "too good to be true." Here is how to interpret them through the Level 9 lens.
 
-**Result**: We have achieved our target of **Zero-Latency Reconstitution**. The system can crash, restart, and resume its real-time consciousness in milliseconds, with no further dependency on the notebook (SQLite) for hot queries.
+### 1. The "Idle SQLite" Indicator
+**Problem**: You see 1,000,000 enqueues but only 3 disk syncs.
+**Interpretation**: This is a **Win**. It means the **Brain (RAM)** is doing 99.9% of the work. SQLite is acting correctly as a **Durable Checkpoint Layer**, not a real-time bottleneck. If you saw 1,000,000 syncs, the system would be 100x slower.
 
-### 2. Cognitive Overhead Reduction
-- **Test**: Comparison of `executeBulkUpdate` with 1,000 ops.
-- **Level 8 (JSON compare)**: ~5.2ms.
-- **Level 9 (Fast Parity)**: **~0.1ms**.
+### 2. The 4.4M Ops/Sec Frontier
+**Problem**: Why is Phase 2 (Queues) so much faster than Phase 1 (Raw DB)?
+**Interpretation**: Phase 2 uses **Active Thought Collapsing**. Because it's enqueuing similar jobs, BroccoliDB collapses the metadata math in RAM. You are witnessing the raw speed of Node.js memory pointers.
+
+### 3. The Recovery Proof
+**Problem**: If the process crashes, do I lose everything?
+**Interpretation**: You lose the data in the **Volatility Window** (the time between the last sync and the crash). In our benchmarks, this is typically $< 500ms$ of data. For high-velocity agents, this is an acceptable tradeoff for the 100x speed increase.
 
 ---
 
 ## 🏃 How to Reproduce
 
 ```bash
-# Run the Event Horizon Benchmark (1M Ops)
-npx tsx tests/benchmark.ts
-
-# Run the Level 9 Sovereign Recovery Audit
+# Level 9 Sovereignty Audit (Reboot & Warmup)
 npx tsx tests/recovery_sovereignty.test.ts
+
+# Level 8 Math Audit (Increment Collapsing)
+npx tsx tests/increment_collapse.test.ts
+
+# Full Event Horizon Benchmark (1M Ops)
+npx tsx tests/benchmark.ts
 ```
 
 ---

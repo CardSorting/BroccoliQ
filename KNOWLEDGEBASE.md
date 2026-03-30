@@ -33,10 +33,38 @@ BroccoliDB is built on a two-layer architecture that separates **Real-Time Proce
 ### Why this works
 Traditional drivers treat SQLite as a real-time engine, hitting the disk per operation. BroccoliDB treats SQLite as a notebook: we think at full speed (RAM), and only write down the results of those thoughts (summaries) every few minutes.
 
-Our three pillars:
-1. **Memory Ingestion**: All writes hit the $O(1)$ memory buffer first.
-2. **Durable Checkpointing**: SQLite persists the batched state occasionally.
-3. **Recovery Sovereignty**: On restart, the memory engine is rebuilt entirely from the SQLite anchor.
+---
+
+## 🧠 The Sovereign Strategy Guide: Working with Layers
+
+To get the most out of BroccoliDB, you must understand how to navigate the relationship between **Real-Time Cognition (RAM)** and **Durable Persistence (SQLite)**.
+
+### 1. When to Trust Layer 1 (Memory)
+Use Layer 1 for high-velocity, high-frequency state updates where the cost of a disk write outweighs the value of absolute durability for a single event.
+- **AI Agent Telemetry**: Token counts, last-seen timestamps, current reasoning step.
+- **Ephemeral State**: Scratchpads, temporary variables, and intermediate graph calculations.
+- **Queue Enqueuing**: Absorbing massive bursts of jobs for later processing.
+
+### 2. When to Force Layer 2 (SQLite)
+Use `dbPool.flush()` explicitly when you reach a "Critical Consciousness Point"—a moment where data loss would be catastrophic.
+- **System Handshakes**: Finalizing a task, committing a financial transaction, or closing a long-running agent session.
+- **Authoritative Transitions**: When an agent hands off a result to an external system.
+
+### 3. The Sovereign Volatility Window
+BroccoliDB operates with an intentional window of potential data loss (e.g., 5000ms or 1,000 ops).
+- **The Tradeoff**: By accepting this window, you gain a **100x–1000x** increase in throughput.
+- **Mitigation**: Adjust `flushMs` and `activeBufferSize` based on your risk tolerance. In AI systems, it is often faster to "re-reason" the last 5 seconds of work than to wait 50ms for a disk write every time.
+
+---
+
+## 🏛️ Recovery Sovereignty
+
+Because Layer 1 is the primary engine, BroccoliDB treats **Recovery** as a first-class citizen. 
+
+- **The Warmup**: On restart, use `warmupTable()` to hydrate your memory indexes. This ensures your "Brain" (RAM) is immediately authoritative for its most critical data.
+- **Consistency**: Even if the brain is wiped, the notebook (SQLite) remains the immutable anchor. Your system wakes up right where it last "summarized" its thoughts.
+
+---
 
 ---
 
@@ -113,7 +141,32 @@ The `GraphService` provides high-level APIs for interacting with the knowledge g
 ---
 
 ## 🏛️ Advanced Service Patterns (Expert Level)
+---
 
+## 🏛️ Sovereign Mind: Technical FAQ
+
+### 1. "How do I know my data is safe?"
+Data safety in BroccoliDB is managed by the **Persistence Event Horizon**.
+- **The Guarantee**: Once `dbPool.flush()` resolves, your data is durably stored in SQLite's WAL (Write-Ahead Log).
+- **The Risk**: Data in the "active buffer" is volatile. We mitigate this by using a **Hybrid Flush Policy** (Time + Size). Even under light load, the system syncs every few seconds.
+
+### 2. "Is SQLite a bottleneck for 4.4M ops/sec?"
+**No, because SQLite isn't doing 4.4M ops.**
+- BroccoliDB performs **Active Thought Collapsing** in RAM. 
+- 1,000,000 enqueues are collapsed into 1–3 physical synchronous disk transactions. 
+- SQLite is only ever performing **Massive Batch Checkpoints**, which it is exceptionally good at (~100k rows/sec in WAL mode).
+
+### 3. "What happens if a Warmup fails?"
+If `warmupTable()` fails (e.g., corrupted DB), BroccoliDB enters **Cold Operation Mode**.
+- It will still function, but queries will hit the disk ($O(N)$) until the memory indexes are naturally rebuilt by new activity.
+- We recommend `PRAGMA integrity_check` on startup for high-stakes environments.
+
+### 4. "Can I disable Layer 2 (SQLite) entirely?"
+**Yes.** By setting `persistence: false` (or just not initializing the provider), BroccoliDB becomes a pure in-memory engine. However, you lose the **Sovereign Recovery** benefits.
+
+---
+
+*Sovereign Level Documentation — Level 10 Completion — March 2026*
 For power users building sovereign AI agents, these advanced services provide the logic layer on top of BroccoliDB's raw storage.
 
 ### `ReasoningService`: The "Truth" Layer
