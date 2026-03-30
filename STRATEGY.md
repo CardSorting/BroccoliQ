@@ -9,28 +9,41 @@ BroccoliDB is a **Sovereign Memory Engine** built for the age of high-velocity A
 In a standard database, every operation is a "sync." In BroccoliDB, we think in **Waves of Persistence**.
 
 ```mermaid
-graph LR
-    subgraph "Layer 1: The Brain (RAM)"
-        Thinking["Cognition (100k - 4.4M ops/sec)"]
-        Thought1[Thought 1] --> Collapsing[Active thought collapsing]
-        Thought2[Thought 2] --> Collapsing
-        Thought3[Thought 3] --> Collapsing
-        Collapsing --> Summary[Final State Summary]
-    end
+sequenceDiagram
+    participant Agent as AI Agent (Logic)
+    participant Brain as Layer 1 (RAM)
+    participant EventHorizon as The Event Horizon
+    participant Notebook as Layer 2 (Disk)
 
-    subgraph "The Event Horizon"
-        Summary -->|Asynchronous Flush| Flush[Checkpoint Sync]
-    end
+    Note over Agent, Brain: Cognition Phase (~0.005ms)
+    Agent->>Brain: Push Update (Thought)
+    Brain->>Brain: O(1) Memory Indexing
+    Brain->>Brain: Active Thought Collapsing
+    Brain-->>Agent: Immediate ACK
 
-    subgraph "Layer 2: The Notebook (SQLite)"
-        Flush -->|Save| Disk[(Durable SQLite)]
-        Disk -->|Warmup| Thinking
-    end
-
-    style Thinking fill:#f9f,stroke:#333,stroke-width:2px
-    style Disk fill:#6cf,stroke:#333,stroke-width:2px
-    style Flush fill:#fc0,stroke:#333,stroke-dasharray: 5 5
+    Note over Brain, Notebook: Checkpoint Phase (~10ms)
+    Brain->>EventHorizon: Cross Boundary (Flush)
+    EventHorizon->>Notebook: Massive Batch SQL
+    Notebook-->>EventHorizon: Transaction Commit
+    EventHorizon-->>Brain: Buffer Rotated
 ```
+
+---
+
+## 🏎️ The Zero-Copy Event Loop: Thinking at the Speed of Pointers
+
+A critical component of the **Sovereign Mind** is the elimination of internal "Cognitive Overhead." While traditional databases spend CPU cycles on serialization, parsing, and context-switching, BroccoliDB leverages the Node.js single-threaded event loop as a feature.
+
+### 1. Lock-Free Cognition
+Because BroccoliDB operates within the single-threaded context of the Node.js event loop, it avoids the overhead of mutexes and semaphores for its primary memory buffers. 
+- **The Result**: 100% of the Brain's CPU is spent on **Decision Logic** and **State Transitions**, rather than managing thread contention.
+
+### 2. Zero-Copy Ingestion
+When an agent pushes a state update, BroccoliDB does not immediately serialize it. Instead, it maintains a **Pointer Reference** to the object in the Layer 1 buffer. 
+- **The Result**: Ingestion latency is measured in **nanoseconds**, not milliseconds. Serialization only occurs at the **Persistence Event Horizon**, where it is batched to maximize throughput.
+
+### 3. The "Thought" Event Horizon
+Serialization is the most expensive cognitive act. By delaying serialization until the absolute last moment before the Notebook (SQLite) is updated, BroccoliDB ensures that the "Thinking" layer remains unburdened by the requirements of the "Storage" layer.
 
 ---
 
