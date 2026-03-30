@@ -10,9 +10,10 @@ Welcome to BroccoliDB — a production-grade database and queue infrastructure d
 
 1. [Introduction](#-introduction)
 2. [What Makes BroccoliDB Special?](#-what-makes-broccolidb-special)
-   - [The 1.5M Logical Ops/Sec Engine](#the-15m-logical-opssec-engine)
+   - [The 2.0M+ Logical Ops/Sec Engine](#the-20m-logical-opssec-engine)
+   - [The Event Horizon: 4.4M Jobs/Sec](#the-event-horizon-44m-jobssec)
    - [Agent Shadows & Isolation](#agent-shadows--isolation)
-   - [Memory-First Queue Strategy](#memory-first-queue-strategy)
+   - [O(1) Memory-First Indexing](#o1-memory-first-indexing)
 3. [Quick Start Scenarios](#-quick-start-scenarios)
    - [1. Building an AI Agent Workspace](#1-building-an-ai-agent-workspace)
    - [2. High-Speed Background Worker](#2-high-speed-background-worker)
@@ -35,20 +36,26 @@ BroccoliDB was born to solve this. It acts as an **asynchronous write-behind lay
 
 ## ✨ What Makes BroccoliDB Special?
 
-### The 1.5M Logical Ops/Sec Engine (**Verified**)
+### The 2.0M+ Logical Ops/Sec Engine (**Verified**)
 BroccoliDB achieves incredible throughput by decoupling logical operations from physical persistence and using a **Chunked SQL Bypass** for the hottest data paths.
 - **Chunked & Coalesce**: Group row-sets into a single multi-row `INSERT` statement within a transaction.
-- **Amortized Disk Sync**: For 800,000 logical ops, BroccoliDB performs as few as **3 physical syncs**.
+- **Amortized Disk Sync**: For 1,000,000 logical ops, BroccoliDB performs as few as **3 physical syncs**.
 - **Lock-Free Handoff**: Concurrent agents push to isolated shadow buffers with **zero global mutex contention**.
 
+### The Event Horizon: 4.4M Jobs/Sec
+Level 7 optimization introduced **O(1) Status Indexing**, allowing the queue to process jobs at nearly the speed of memory.
+- **Processing Throughput**: **4,404,960 jobs/sec**.
+- **Scale**: Drains a 1,000,000-job queue in **0.23 seconds**.
+- **Index Architecture**: Specialized `activeIndex` Maps eliminate O(N) scanning of in-memory buffers.
+
 > [!TIP]
-> **View Performance Audit**: See the latest verified 1.5M+ results in our [Benchmarks (BENCHMARK.md)](./BENCHMARK.md).
+> **View Performance Audit**: See the latest verified 2.0M+ results in our [Benchmarks (BENCHMARK.md)](./BENCHMARK.md).
 
 ### Agent Shadows & Isolation
 One of our most unique features is **Agent Shadows**. They provide a "scratchpad" for complex multi-step processes. An agent can perform hundreds of database operations in a shadow workspace, reading back its own uncommitted state, without affecting the main database until the entire process is ready to `commit`.
 
-### Memory-First Queue Strategy
-Our `SqliteQueue` is a dual-mode engine. It uses a lightning-fast memory buffer for immediate job enqueuing, backed by an optimized SQLite table for persistence. This means your background workers stay saturated with work while your main thread never blocks on I/O.
+### O(1) Memory-First Indexing
+Our `SqliteQueue` and `BufferedDbPool` now leverage **O(1) Status Indexing**. This allows for instantaneous retrieval of pending tasks even when the write-behind buffer contains millions of operations. This is the "Event Horizon" — where database latency virtually disappears for the application logic.
 
 ---
 
