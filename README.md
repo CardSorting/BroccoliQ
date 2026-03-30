@@ -20,11 +20,11 @@ Welcome to BroccoliDB — a production-grade infrastructure where **Memory is th
 
 | If you are... | Read this... | Purpose |
 | :--- | :--- | :--- |
-| **New here** | 🥦 **[MANIFESTO.md](file:///Users/bozoegg/Downloads/broccolidb/MANIFESTO.md)** | Instant concept capture (30-sec read) |
-| **Building Agents**| 🤖 **[TUTORIAL_AI_AGENT.md](file:///Users/bozoegg/Downloads/broccolidb/TUTORIAL_AI_AGENT.md)** | **Practical Guide for AI Loops** |
-| **Strategic** | 🧠 **[STRATEGY.md](file:///Users/bozoegg/Downloads/broccolidb/STRATEGY.md)** | Understanding the Brain vs. Notebook |
-| **Academic** | 🎓 **[WHITEPAPER.md](file:///Users/bozoegg/Downloads/broccolidb/WHITEPAPER.md)** | Formal technical analysis & citations |
-| **Engineering** | 🚀 **[BENCHMARK.md](file:///Users/bozoegg/Downloads/broccolidb/BENCHMARK.md)** | Real-world throughput and latency results |
+| **New here** | 🚀 **[GET_STARTED.md](./GET_STARTED.md)** | **5-minute quick start guide** |
+| **Building Agents**| 🤖 **[TUTORIAL_AI_AGENT.md](./TUTORIAL_AI_AGENT.md)** | Practical Guide for AI Loops |
+| **Curious** | 🥦 **[MANIFESTO.md](./MANIFESTO.md)** | Instant concept capture (30-sec read) |
+| **Strategic** | 🧠 **[STRATEGY.md](./STRATEGY.md)** | Understanding the Brain vs. Notebook |
+| **Academic** | 🎓 **[WHITEPAPER.md](./WHITEPAPER.md)** | Formal technical analysis & citations |
 
 ---
 
@@ -38,6 +38,39 @@ Welcome to BroccoliDB — a production-grade infrastructure where **Memory is th
 
 ---
 
+## 🚀 Quick Start
+
+### 1. Install
+
+```bash
+npm install broccolidb
+```
+
+### 2. Initialize (CLI)
+
+```bash
+# Index your codebase and build the context graph
+npx broccolidb init
+```
+
+### 3. Use in Code
+
+```typescript
+import { Connection, Workspace } from 'broccolidb';
+
+const conn = new Connection({ dbPath: './broccolidb.db' });
+const pool = conn.getPool();
+
+// High-speed, memory-first push
+await pool.push({
+  type: 'insert',
+  table: 'thoughts',
+  values: { content: 'Thinking about the future...', timestamp: Date.now() }
+});
+```
+
+---
+
 ## 🧠 The Sovereign Mind Strategy
 
 BroccoliDB was built to solve the **Persistence Latency Bottleneck** that cripples modern AI agents. 
@@ -48,90 +81,6 @@ Traditional database drivers require you to write down every thought in a notebo
 BroccoliDB separates these into two sovereign layers:
 - **🧠 Layer 1: The Brain (RAM)**: You think at **4,400,000 thoughts per second**. This is real-time, in-memory cognition.
 - **💾 Layer 2: The Notebook (SQLite)**: Every few hundred milliseconds (the Persistence Event Horizon), the Brain writes a **summary** of its conclusions to the notebook.
-
-### Why This Works
-By separating **Cognition** from **Persistence**, BroccoliDB allows your agents to operate at raw RAM speeds while ensuring that their state is durably anchored in a standard SQLite file. If the system reboots, the Brain "wakes up" and reads its notebook so fast (**2.5M records/sec**) that it regains its entire state instantly.
-
----
-
-### 📑 The Sovereign Documentation Suite
-
-For deep, academic, or strategic investigations, please see our dedicated artifacts:
-
-| Document | Purpose | Audience |
-| :--- | :--- | :--- |
-| 🎓 **[WHITEPAPER.md](file:///Users/bozoegg/Downloads/broccolidb/WHITEPAPER.md)** | Academic, professional, and defensible whitepaper (Level 10). | Researchers & Architects |
-| 🧠 **[STRATEGY.md](file:///Users/bozoegg/Downloads/broccolidb/STRATEGY.md)** | High-fidelity conceptual guide to the "Sovereign Mind." | Strategic Developers |
-| 🚀 **[BENCHMARK.md](file:///Users/bozoegg/Downloads/broccolidb/BENCHMARK.md)** | Empirical results from Level 7–10 stress tests. | Performance Engineers |
-
----> **Performance Indicator**: 3 disk syncs for 1M operations is not "idle" behavior — it's the ultimate indicator of success. It means the system is only writing down essential summaries, not every individual thought.
-
-### The Tradeoff
-Because SQLite syncs are delayed:
-✅ **Insane Throughput**: Millions of ops/sec in memory.
-❌ **Window of Loss**: A small window of uncommitted data may be lost in a catastrophic system crash before the next checkpoint flush.
-
----
-
-### 🎯 Performance Specs: The Sovereign Benchmark
-
-| Operation | Logic Ops | Disk Syncs | Latency (p95) |
-| :--- | :--- | :--- | :--- |
-| **Raw DB Push** | 1,100,000 / sec | ~3 | 0.005ms |
-| **SqliteQueue Enqueue** | 4,400,000 / sec | Async | 0.0002ms |
-| **Sovereign Recovery** | 1,000,000 / sec | 1 (Read) | 0.40ms |
-
-### 📑 The Sovereign Mind Strategy Guide
-For a deep investigation into the **Persistence Event Horizon** and the **Brain vs. Notebook** philosophy, please see our dedicated strategy guide:
-
-👉 **[STRATEGY.md (Level 10 Sovereign Manual)](file:///Users/bozoegg/Downloads/broccolidb/STRATEGY.md)**
-
----
-
-## 🚀 Quick Start Scenarios
-
-### 1. Building an AI Agent Workspace
-Perfect for agents that need to perform complex chains of reasoning without polluting the main database state prematurely.
-
-```typescript
-import { dbPool } from './infrastructure/db/BufferedDbPool.js';
-
-const result = await dbPool.runTransaction(async (agentId) => {
-  // Isolate your work
-  await dbPool.push({ type: 'insert', table: 'decisions', values: { ... } }, agentId);
-  
-  // Read back your own uncommitted data
-  const myDecisions = await dbPool.selectWhere('decisions', { column: 'agentId', value: agentId }, agentId);
-  
-  return myDecisions;
-}); // Automatically flushes to disk on success
-```
-
-### 2. High-Speed Background Worker
-Need to process thousands of small tasks?
-
-```typescript
-import { SqliteQueue } from './infrastructure/queue/SqliteQueue.js';
-
-const taskQueue = new SqliteQueue<MyTaskPayload>();
-
-// Process with extreme concurrency
-taskQueue.process(async (job) => {
-  console.log(`Processing ${job.id}...`);
-}, { concurrency: 500, batchSize: 50 });
-```
-
-### 3. Persistent Knowledge Graph
-Build a network of interconnected points of knowledge with built-in traversal support.
-
-```typescript
-import { GraphService } from './core/agent-context/GraphService.js';
-
-const graph = new GraphService(ctx);
-await graph.addKnowledge('node_1', 'concept', 'BroccoliDB is fast', {
-  edges: [{ targetId: 'node_2', type: 'supports' }]
-});
-```
 
 ---
 
@@ -159,23 +108,6 @@ graph TD
 
 ---
 
-## 📦 Installation & Setup
-
-1. **Install Dependencies**:
-   ```bash
-   npm install better-sqlite3 kysely
-   ```
-
-2. **Initialize Your Connection**:
-   ```typescript
-   import { setDbPath } from './infrastructure/db/Config.js';
-
-   // Configure the path to your database file
-   setDbPath('./my-data.db');
-   ```
-
----
-
 ## 🛡️ Deep Technical Hardening
 
 BroccoliDB automatically configures SQLite for maximum performance and stability:
@@ -187,24 +119,12 @@ BroccoliDB automatically configures SQLite for maximum performance and stability
 
 ---
 
-## 🏛️ Advanced Usage Patterns (Expert Level)
-
-### 🧐 High-Fidelity Agent Workflows
-For agents that need to manage "truth" over time, leverage the `ReasoningService`. It will calculate **Epistemic Sovereignty** by analyzing commit history, file churn, and evidence discounting to ensure your agent's reasoning remains grounded in the latest codebase.
-
-### 🕸️ Structural Governance (The Spider Engine)
-Implement strict structural rules by monitoring **Structural Entropy**. The `SpiderEngine` calculates how much "rot" is in your codebase based on coupling, depth, and orphaned files. Link this to your CI/CD pipeline to block PRs that exceed a certain entropy score.
-
-### 🩹 Graph Self-Healing
-Maintain a clean knowledge base by running `selfHealGraph()`. This implements a **HITS algorithm** to identify authoritative nodes and prune disconnected or weak reasoning chains.
-
----
-
 ## 📚 Further Documentation
 
-- **[Benchmarks (BENCHMARK.md)](./BENCHMARK.md)** - Verified performance findings, methodology, and how to reproduce.
-- **[Knowledgebase (KNOWLEDGEBASE.md)](./KNOWLEDGEBASE.md)** - Internal schema, service reference, and service integration patterns.
-- **[Architecture Deep Dive (ARCHITECTURAL_DEEP_DIVE.md)](./ARCHITECTURAL_DEEP_DIVE.md)** - Mathematical formulas for structural entropy, Bayesian priors, and graph self-healing algorithms.
+- **[Detailed Usage (USAGE.md)](./USAGE.md)** - API reference and advanced patterns.
+- **[Benchmarks (BENCHMARK.md)](./BENCHMARK.md)** - Verified performance findings and methodology.
+- **[Knowledgebase (KNOWLEDGEBASE.md)](./KNOWLEDGEBASE.md)** - Internal schema and service reference.
+- **[Architecture Deep Dive (ARCHITECTURAL_DEEP_DIVE.md)](./ARCHITECTURAL_DEEP_DIVE.md)** - Mathematical formulas for structural entropy and graph self-healing.
 
 ---
 

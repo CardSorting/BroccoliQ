@@ -18,7 +18,10 @@ If you write these to a traditional database synchronously, your agent will feel
 Instead of hitting the disk, we push everything to the **BroccoliDB Brain**.
 
 ```typescript
-import { dbPool } from './infrastructure/db/BufferedDbPool.js';
+import { Connection } from 'broccolidb';
+
+const conn = new Connection({ dbPath: './broccolidb.db' });
+const dbPool = conn.getPool();
 
 async function runAgentStep(stepId: string, prompt: string) {
   // 1. Log the 'Start' of the thought (Logical Op)
