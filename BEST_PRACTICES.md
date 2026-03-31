@@ -32,7 +32,7 @@ Don't code directly to `SqliteQueue`. Wrap it in a domain service.
 
 ```typescript
 // ❌ BAD:
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 // Direct access everywhere → impossible to test
 const queue = new SqliteQueue();
@@ -291,13 +291,13 @@ Visualize metrics. Real humans understand charts better than logs.
 import { Gauge } from 'prom-client';
 
 const gaugeQueueDepth = new Gauge({
-  name: 'broccolidb_queue_depth',
+  name: 'broccoliq_queue_depth',
   help: 'Current number of jobs in the queue',
   labelNames: ['queue', 'status']
 });
 
 const gaugeThroughput = new Gauge({
-  name: 'broccolidb_throughput',
+  name: 'broccoliq_throughput',
   help: 'Jobs processed per second',
   labelNames: ['queue', 'operation']
 });
@@ -481,7 +481,7 @@ async function processHighPriorityOnly() {
 
 ```typescript
 // ❌ BAD: Global queue, zero cost control
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 let globalQueue: SqliteQueue | null = null;
 

@@ -451,7 +451,7 @@ await queue.fail('job-123', 'timeout');
 Or jump to code:
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const queue = new SqliteQueue({ concurrency: 1000 });
 

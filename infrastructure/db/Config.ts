@@ -220,7 +220,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
   if (_db) return _db;
   if (!_dbPath) {
     // Default path if not set
-    _dbPath = path.resolve(process.cwd(), 'broccolidb.db');
+    _dbPath = path.resolve(process.cwd(), 'broccoliq.db');
   }
 
   const dbDir = path.dirname(_dbPath);

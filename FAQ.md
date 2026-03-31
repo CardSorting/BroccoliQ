@@ -537,7 +537,7 @@ setInterval(() => {
 ```typescript
 // server.js
 import express from 'express';
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const app = express();
 const orderQueue = new SqliteQueue({ concurrency: 100 });
@@ -966,26 +966,26 @@ await influx.write({
 **Minor corruption:**
 ```bash
 # SQLite can often recover some data
-sqlite3 broccolidb.db "PRAGMA integrity_check;"
+sqlite3 broccoliq.db "PRAGMA integrity_check;"
 
 # Recovery
-sqlite3 broccolidb.db "PRAGMA wal_checkpoint(TRUNCATE);"
+sqlite3 broccoliq.db "PRAGMA wal_checkpoint(TRUNCATE);"
 ```
 
 **Major corruption:**
 ```bash
 # Backup the corrupted file
-cp broccolidb.db.backup.broken broccolidb.db
+cp broccoliq.db.backup.broken broccoliq.db
 
 # Restore from backup
-cp broccolidb.db.backup.wal broccolidb.db.wal
+cp broccoliq.db.backup.wal broccoliq.db.wal
 ```
 
 **Prevention:**
 ```bash
 # Daily script
 crontab -e
-0 0 * * * cp broccolidb.db /backups/$(date +%Y%m%d).db
+0 0 * * * cp broccoliq.db /backups/$(date +%Y%m%d).db
 ```
 
 **BroccoliQ doesn't protect against corruption.** That's the database's job.

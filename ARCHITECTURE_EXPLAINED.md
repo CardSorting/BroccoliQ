@@ -635,7 +635,7 @@ class LazyInitializer {
   constructor() {
     // Database created on first use, not on library import
     if (!this.db) {
-      this.db = new Database('broccolidb.db');
+      this.db = new Database('broccoliq.db');
       this.db.open();
     }
   }

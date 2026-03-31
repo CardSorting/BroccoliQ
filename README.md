@@ -9,7 +9,7 @@
 ## 🚀 The Magic in 10 Lines
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const queue = new SqliteQueue();
 queue.enqueue({ task: 'process_user' });
@@ -313,13 +313,13 @@ And Job #47 resumes processing it
 **Do this:**
 
 ```bash
-npm install broccolidb
+        npm install broccoliq
 ```
 
 **File: coffee-shop-demo.js**
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const cafe = new SqliteQueue();
 
@@ -389,7 +389,7 @@ node coffee-shop-demo.js
 **Example: Email queue with priority**
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const emailQueue = new SqliteQueue();
 
@@ -603,7 +603,7 @@ When worker asks for jobs:
 ### Pattern #1: Email Notification System
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const emailQueue = new SqliteQueue();
 
@@ -739,14 +739,14 @@ For these, check our comprehensive guides:
 ### Step 1: Install
 
 ```bash
-npm install broccolidb
+npm install broccoliq
 ```
 
 ### Step 2: Create Your First Queue
 
 ```typescript
 // coffee-shop-demo.ts
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const cafe = new SqliteQueue();
 

@@ -23,7 +23,7 @@ You've read the basics. Now you're ready to build with BroccoliQ.
 That's how simple it is.
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const cafe = new SqliteQueue({ concurrency: 100 });
 cafe.enqueue({ order: 'latte', customer: 'alice' });
@@ -512,7 +512,7 @@ queue.process(async (job) => {
 - [ ] Graceful shutdown registered
 - [ ] Monitoring queue size working
 - [ ] Visibility timeout longer than max job duration
-- [ ] Database backup plan (broccolidb.db file)
+- [ ] Database backup plan (broccoliq.db file)
 - [ ] Error logging working
 - [ ] Retry settings configured
 - [ ] Concurrency balanced for your operations
@@ -530,7 +530,7 @@ queue.process(async (job) => {
 Or go back to:
 
 ```typescript
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const queue = new SqliteQueue({ concurrency: 1000 });
 

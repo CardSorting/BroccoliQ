@@ -130,7 +130,7 @@ Start multiple processes, point them to the same database:
 
 ```typescript
 // worker1.js
-import { SqliteQueue } from 'broccolidb';
+import { SqliteQueue } from 'broccoliq';
 
 const queue = new SqliteQueue();  // Uses default dbPath
 
@@ -203,7 +203,7 @@ class ShardedQueue {
   constructor() {
     for (let i = 0; i < this.shardCount; i++) {
       this.shards.push(new SqliteQueue({
-        dbPath: `./broccolidb-shard-${i}-${Date.now()}.db`
+        dbPath: `./broccoliq-shard-${i}-${Date.now()}.db`
       }));
     }
   }
