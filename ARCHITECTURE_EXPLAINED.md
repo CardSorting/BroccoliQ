@@ -10,9 +10,10 @@ This chapter peels back the curtain. No more "does it work" questions—this is 
 
 **Truth:** It uses **both**.
 
-BroccoliQ doesn't choose one. It uses **two buffers that talk to each other**.
+The BroccoliDB Sovereign Hive was **architected for the Bun engine's direct SQLite integration**. While it maintains Node.js compatibility, the system's "dual-buffer" mechanics are specifically designed to leverage the zero-latency bridge available only in the Bun runtime.
 
 ```typescript
+// The Bun-Native Architecture (Reference):
 // What happens when you call queue.enqueue()?
 
 // The Secret Dual-Buffer Design:

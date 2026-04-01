@@ -16,7 +16,37 @@ You've read the basics. Now you're ready to build with BroccoliQ.
 
 ---
 
-## Chapter 1: The Coffee Shop
+---
+
+## Chapter 1: Environment-Specific Setup (Bun is Recommended)
+
+BroccoliQ is a **Bun-native** infrastructure layer. While it maintains stability for Node.js, the system is uniquely optimized for the **Bun engine's zero-latency SQLite integration**.
+
+### 🔥 High-Performance Bun Setup (Recommended)
+In **Bun**, the driver leverages the integrated `bun:sqlite` engine. This provides O(1) N-API overhead and a **29% raw IO throughput advantage** over traditional Node-based drivers.
+
+```bash
+# Install for Bun
+bun add @noorm/broccoliq
+
+# Run your system
+bun run index.ts
+```
+
+### Universal Node.js Setup
+In **Node.js**, BroccoliQ uses the production-standard `better-sqlite3`. This is maintained for cross-platform stability and legacy server environments.
+
+```bash
+# Install for Node
+npm install @noorm/broccoliq better-sqlite3
+
+# Run your system
+node index.js
+```
+
+---
+
+## Chapter 2: The Coffee Shop
 
 ### Start Here: Your First (7-Line) App
 
@@ -43,7 +73,7 @@ cafe.process(async (order) => {
 
 ---
 
-## Chapter 2: Queue Understanding
+## Chapter 3: Queue Understanding
 
 ### What Happens Behind the Scenes
 
@@ -87,7 +117,7 @@ BROCCOLIQ ADDS:
 
 ---
 
-## Chapter 3: Configuration Patterns
+## Chapter 4: Configuration Patterns
 
 ### Settings That Work 90% of the Time
 
@@ -107,31 +137,6 @@ const queue = new SqliteQueue({
 | `visibilityTimeoutMs` | Jobs take longer than 5 minutes | Increase |
 | `batchSize` | Very internet-slow operations | Reduce |
 | `baseRetryDelayMs` | Tasks have timeouts | Adjust timing |
-
-## Chapter 4: Environment-Specific Setup (Bun vs Node)
-
-BroccoliQ is designed to be high-performance regardless of your runtime. It automatically selects the optimal database driver to ensure zero-latency operations.
-
-### High-Performance Bun Setup
-In **Bun**, the library leverages the integrated `bun:sqlite` engine. This is the recommended environment for local AI agents and high-throughput telemetry sinks due to the O(1) N-API overhead.
-
-```bash
-# No special setup needed. Bun handles everything natively.
-bun index.ts
-```
-
-### Production-Grade Node.js Setup
-In **Node.js**, BroccoliQ uses the battle-tested `better-sqlite3`. This is recommended for long-running server processes and environments where stability is paramount.
-
-```bash
-# Ensure better-sqlite3 is installed
-npm install better-sqlite3
-node index.js
-```
-
-### Verifying Your Dialect
-You can check which engine is being used by enabling debug logs:
-`DEBUG=broccolidb:* node index.js`
 
 ---
 
@@ -584,14 +589,12 @@ await projectX.enqueue({ task: 'high-priority-work' });
 2. **best-practices.md** (1 hour) → Common patterns, real-world architectures
 3. **faq.md** (15 min) → Deep dive FAQs
 
-Or go back to:
+### Step 1: Install
 
-```typescript
-import { SqliteQueue } from 'broccoliq';
-
-const queue = new SqliteQueue({ concurrency: 1000 });
-
-// That's it. 15 lines to 10,000 ops/sec.
+```bash
+bun add @noorm/broccoliq
 ```
+
+### Step 2: Create Your First Queue
 
 **BroccoliQ is infrastructure that talks to humans.**

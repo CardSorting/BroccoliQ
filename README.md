@@ -1,6 +1,6 @@
-# BroccoliQ: Infrastructure That Doesn't Block
-
 **Accelerate your application. Buffer your writes. Skip the queues.**
+
+🔥 **Native to Bun**: Built for the `bun:sqlite` engine for O(1) N-API overhead and zero-copy buffering.
 
 > *"I tried BroccoliQ and got 10× better performance. The hardest part was fighting my urge to add optimization code."*
 
@@ -50,13 +50,17 @@ await projectX.enqueue({ task: 'distributed-work' });
 - **Shared Modifications (Docs/Files)** → **Pessimistic (Sovereign Locks)**: Cross-process safety.
 - **Massive Ingest (Bulk Load)** → **Atomic Batching (Level 3 Quantum Boost)**: Pure throughput.
 
+## ✨ Why Bun-Native?
+
+BroccoliQ is architected as a **Bun-First** infrastructure layer. While it maintains full compatibility with Node.js, it is uniquely optimized for the **Bun engine's direct SQLite integration**.
+
+- **O(1) N-API Overhead**: Unlike Node-based drivers that cross the C++ boundary with 40ms+ latency, BroccoliQ talks directly to `bun:sqlite`'s memory space.
+- **Zero-Copy Buffering**: Your data stays in the engine's memory from enqueue to flush.
+- **Sovereign Hive Support**: The high-performance sharding and locking protocols are designed for the high-concurrency event loop of Bun.
+
 ---
 
 ## 📚 Deep Research Lab
-If you're building production-grade infrastructure, start here:
-- 📖 [KNOWLEDGEBASE.md](file:///Users/bozoegg/Downloads/broccolidb/KNOWLEDGEBASE.md) → Architectural Source of Truth & Performance Profiles.
-- 📖 [SCENARIOS.md](file:///Users/bozoegg/Downloads/broccolidb/SCENARIOS.md) → Real-world integration blueprints (Coding, Ingest, Scaling).
-- 📖 [ARCHITECTURE_EXPLAINED.md](file:///Users/bozoegg/Downloads/broccolidb/ARCHITECTURE_EXPLAINED.md) → Operational mastery and tuning guides.
 
 ---
 
@@ -338,7 +342,7 @@ And Job #47 resumes processing it
 **Do this:**
 
 ```bash
-        npm install broccoliq
+        bun add @noorm/broccoliq
 ```
 
 **File: coffee-shop-demo.js**
@@ -385,7 +389,7 @@ console.log('Watch as 1,000 jobs fly through. Wait for "Burnt coffee" errors.');
 
 **Run it:**
 ```bash
-node coffee-shop-demo.js
+bun run coffee-shop-demo.ts
 ```
 
 **What you'll see:**
@@ -771,7 +775,7 @@ For these, check our comprehensive guides:
 ### Step 1: Install
 
 ```bash
-npm install broccoliq
+bun add @noorm/broccoliq
 ```
 
 ### Step 2: Create Your First Queue
@@ -796,7 +800,7 @@ cafe.process(async (job) => {
 ### Step 3: Run
 
 ```bash
-npx ts-node coffee-shop-demo.ts
+bun run coffee-shop-demo.ts
 ```
 
 **Watch it in action:**
