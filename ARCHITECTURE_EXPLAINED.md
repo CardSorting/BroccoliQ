@@ -307,8 +307,9 @@ class BufferedDbPool {
 **The "Sovereign Swarm" Enhancements:**
 
 1.  **Sharded Partition Model (Level 8)**: Instead of one giant SQLite file, BroccoliDB now supports multiple **shards**. Operations specify a `shardId`, allowing the system to distribute load across multiple physical files.
-2.  **Agent Shadow Isolation**: When an agent "begins work", all its operations are stored in a private **shadow buffer**. These operations are invisible to other agents until `commitWork()` is called, ensuring atomic multi-step operations without locking the entire database.
-3.  **Quantum Boost (Level 3)**: For massive batches (>100 operations), the pool switches to **Chunked Raw SQL**. This bypasses ORM overhead and uses pre-allocated parameter buffers to achieve near-native SQLite performance.
+2.  **Runtime-Agnostic Intelligence**: The system automatically detects its execution environment. In **Bun**, it uses the native `bun:sqlite` engine; in **Node.js**, it falls back to the production-grade `better-sqlite3` dialect.
+3.  **Agent Shadow Isolation**: When an agent "begins work", all its operations are stored in a private **shadow buffer**. These operations are invisible to other agents until `commitWork()` is called, ensuring atomic multi-step operations without locking the entire database.
+4.  **Quantum Boost (Level 3)**: For massive batches (>100 operations), the pool switches to **Chunked Raw SQL**. This bypasses ORM overhead and uses pre-allocated parameter buffers to achieve near-native SQLite performance.
 
 **Why buffering matters:**
 
@@ -334,7 +335,43 @@ class BufferedDbPool {
 
 ---
 
-## Chapter 4: The Concurrency Model
+## Chapter 4: Runtime-Agnostic Intelligence
+
+### The Myth: "Do I need different code for Bun and Node?"
+
+**Truth:** **No.** BroccoliDB handles the detection and dialect swapping automatically.
+
+Depending on the environment, the system dynamically imports the most optimized database engine available.
+
+```typescript
+// Internal Config logic derived from src/infrastructure/db/Config.ts
+const isBun = !!(globalThis as any).Bun;
+
+export async function getDb(shardId: string = "main") {
+    if (isBun) {
+        // Native Bun Support: O(1) N-API Overhead reduction
+        const { Database } = await import("bun:sqlite");
+        const { BunSqliteDialect } = await import("kysely-bun-sqlite");
+        // ... initialized with native Database instance
+    } else {
+        // Production-grade Node Support
+        const Database = (await import("better-sqlite3")).default;
+        // ... initialized with better-sqlite3 dialect
+    }
+}
+```
+
+#### Why this matters:
+- **Bun**: Leverages the built-in SQLite engine, avoiding the overhead of Node-API (N-API) bindings entirely. Higher raw throughput for local agents.
+- **Node.js**: Uses the battle-tested `better-sqlite3` for production reliability and stable persistence.
+
+---
+
+## Chapter 5: The Sharded Persistence Layer
+
+---
+
+## Chapter 6: The Concurrency Model
 
 ### The Myth: "Does large concurrency = large RAM usage?"
 
@@ -397,7 +434,7 @@ estimate();
 
 ---
 
-## Chapter 5: The Error Recovery (Visibility Timeout)
+## Chapter 7: The Error Recovery (Visibility Timeout)
 
 ### The Myth: "Do jobs fail if workers crash?"
 
@@ -466,7 +503,7 @@ class CrashRecoverySystem {
 
 ---
 
-## Chapter 6: The "Why SQLite?" Argument
+## Chapter 8: The "Why SQLite?" Argument
 
 ### The Myth: "Why use SQLite instead of Postgres/MongoDB?"
 
@@ -527,7 +564,7 @@ class SqliteAdvantages {
 
 ---
 
-## Chapter 7: The "Magic" of Batch Processing
+## Chapter 9: The "Magic" of Batch Processing
 
 ### The Myth: "Does batching improve throughput?"
 
@@ -577,7 +614,7 @@ async function processBatch(jobs: Job[]) {
 
 ---
 
-## Chapter 8: The "Unexpected" Optimizations
+## Chapter 10: The "Unexpected" Optimizations
 
 ### Things you didn't expect
 
@@ -675,7 +712,7 @@ class QuietHourOptimizer {
 
 ---
 
-## Chapter 9: The Terror of Race Conditions
+## Chapter 11: The Terror of Race Conditions
 
 ### How BroccoliQ Avoids Them
 
@@ -743,7 +780,7 @@ class ShadowReclaimer {
 
 ---
 
-## Chapter 10: The "Scale" Mindset
+## Chapter 12: The "Scale" Mindset
 
 ### How to Scale (Beyond the Numbers)
 

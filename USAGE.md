@@ -108,9 +108,34 @@ const queue = new SqliteQueue({
 | `batchSize` | Very internet-slow operations | Reduce |
 | `baseRetryDelayMs` | Tasks have timeouts | Adjust timing |
 
+## Chapter 4: Environment-Specific Setup (Bun vs Node)
+
+BroccoliQ is designed to be high-performance regardless of your runtime. It automatically selects the optimal database driver to ensure zero-latency operations.
+
+### High-Performance Bun Setup
+In **Bun**, the library leverages the integrated `bun:sqlite` engine. This is the recommended environment for local AI agents and high-throughput telemetry sinks due to the O(1) N-API overhead.
+
+```bash
+# No special setup needed. Bun handles everything natively.
+bun index.ts
+```
+
+### Production-Grade Node.js Setup
+In **Node.js**, BroccoliQ uses the battle-tested `better-sqlite3`. This is recommended for long-running server processes and environments where stability is paramount.
+
+```bash
+# Ensure better-sqlite3 is installed
+npm install better-sqlite3
+node index.js
+```
+
+### Verifying Your Dialect
+You can check which engine is being used by enabling debug logs:
+`DEBUG=broccolidb:* node index.js`
+
 ---
 
-## Chapter 4: Batch vs Individual Processing
+## Chapter 5: Batch vs Individual Processing
 
 ### When to Use Which Mode
 
@@ -180,7 +205,7 @@ queue.processBatch(async (rows) => {
 
 ---
 
-## Chapter 5: Common Mistakes
+## Chapter 6: Common Mistakes
 
 ⚠️ **MISTAKE #1: Not Using Concurrent Processing**
 
@@ -320,7 +345,7 @@ setInterval(async () => {
 
 ---
 
-## Chapter 6: Hidden Modes (Secret Knowledge)
+## Chapter 7: Hidden Modes (Secret Knowledge)
 
 ### Things You Didn't Know Existed
 
@@ -377,7 +402,7 @@ console.log({
 
 ---
 
-## Chapter 7: Failure Recovery
+## Chapter 8: Failure Recovery
 
 ### What Happens When Things Go Wrong
 
@@ -436,7 +461,7 @@ await dbPool.flush();  // Force flush
 
 ---
 
-## Chapter 8: Performance Tuning
+## Chapter 9: Performance Tuning
 
 ### How to Reach 10,000+ Ops/Sec
 
@@ -505,7 +530,7 @@ queue.process(async (job) => {
 
 ---
 
-## Chapter 9: Production Checklist
+## Chapter 10: Production Checklist
 
 ### Before You Deploy
 
@@ -553,7 +578,7 @@ await projectX.enqueue({ task: 'high-priority-work' });
 
 ---
 
-## Chapter 10: Next Steps
+## Chapter 12: Next Steps
 
 1. **advanced.md** (2 hours) → Performance optimization, scaling strategies
 2. **best-practices.md** (1 hour) → Common patterns, real-world architectures

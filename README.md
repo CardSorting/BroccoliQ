@@ -29,11 +29,12 @@ await projectX.enqueue({ task: 'distributed-work' });
 ```
 
 **What makes this special:**
-1. **Sharded Partition Architecture** → Scale horizontally across multiple physical shards
-2. **Distributed Sovereign Locking** → Cross-process mutual exclusion for entire swarms
-3. **Autonomous Integrity Worker** → Background self-healing, corruption repair, and auto-optimization
-4. **Infinite Write Buffering** → Jobs don't wait for disk, leveraging dual-buffer swaps
-5. **Agent Shadow Isolation** → Private, uncommitted state per agent for zero-contention writes
+1. **Sharded Partition Architecture** → Scale horizontally across multiple physical shards via `shardId`.
+2. **Native Bun & Node Support** → Auto-swaps between `bun:sqlite` and `better-sqlite3` for O(1) N-API overhead.
+3. **Distributed Sovereign Locking** → Cross-process mutual exclusion for entire swarms.
+4. **Autonomous Integrity Worker** → Background self-healing, corruption repair, and auto-optimization.
+5. **Infinite Write Buffering** → Jobs don't wait for disk, leveraging sharded `BufferedDbPool` swaps.
+6. **Agent Shadow Isolation** → Private, uncommitted state per agent for zero-contention writes.
 
 ---
 
