@@ -4,8 +4,8 @@
   "type": "module",
   "private": false,
   "description": "BroccoliQ - Queue and Database Processing Infrastructure",
-  "main": "./infrastructure/index.ts",
-  "types": "./infrastructure/index.ts",
+  "main": "./dist/infrastructure/index.js",
+  "types": "./dist/infrastructure/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
