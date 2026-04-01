@@ -25,14 +25,33 @@ queue.process(async (job) => {
 ```
 
 **What makes this special:**
-
 1. **Sharded Partition Architecture** → Scale horizontally across multiple physical shards
 2. **Distributed Sovereign Locking** → Cross-process mutual exclusion for entire swarms
 3. **Autonomous Integrity Worker** → Background self-healing, corruption repair, and auto-optimization
 4. **Infinite Write Buffering** → Jobs don't wait for disk, leveraging dual-buffer swaps
 5. **Agent Shadow Isolation** → Private, uncommitted state per agent for zero-contention writes
 
-**That's all. The rest is under-the-hood magic.**
+---
+
+## 🧭 Strategic Decision-Making
+
+### To Shard or Not to Shard?
+- **High Throughput (> 50k ops/sec)?** → **Shard immediately** to bypass single-file IO limits.
+- **Shared Resource Contention?** → **Single Shard + Sovereign Locking** for simpler coordination.
+- **Data Locality (User/Project partition)?** → **Shard by Partition** for maximum horizontal scale.
+
+### Locking Strategy
+- **Independent Writes (Telemetry)** → **Optimistic (Agent Shadows)**: Zero-lock, massive scale.
+- **Shared Modifications (Docs/Files)** → **Pessimistic (Sovereign Locks)**: Cross-process safety.
+- **Massive Ingest (Bulk Load)** → **Atomic Batching (Level 3 Quantum Boost)**: Pure throughput.
+
+---
+
+## 📚 Deep Research Lab
+If you're building production-grade infrastructure, start here:
+- 📖 [KNOWLEDGEBASE.md](file:///Users/bozoegg/Downloads/broccolidb/KNOWLEDGEBASE.md) → Architectural Source of Truth & Performance Profiles.
+- 📖 [SCENARIOS.md](file:///Users/bozoegg/Downloads/broccolidb/SCENARIOS.md) → Real-world integration blueprints (Coding, Ingest, Scaling).
+- 📖 [ARCHITECTURE_EXPLAINED.md](file:///Users/bozoegg/Downloads/broccolidb/ARCHITECTURE_EXPLAINED.md) → Operational mastery and tuning guides.
 
 ---
 
@@ -480,6 +499,9 @@ You want to know **what happens under-the-hood**? We've got you.
 | 100,000 writes/second | 15,000ms avg latency | 1.5ms avg latency | **10000× faster** |
 | **Sharded (10 shards)** | **Blocked at 10K** | **1M+ writes/second** | **Infinite Scale** |
 
+> [!TIP]
+> Hardware matters. See [The Sweet Spot Tuning Guide](file:///Users/bozoegg/Downloads/broccolidb/ARCHITECTURE_EXPLAINED.md#the-sweet-spot-tuning-guide) for NVMe vs. Network Mount recommendations.
+
 ### Memory Usage
 
 - **In-memory buffer:** 1,000,000 slots by default
@@ -505,6 +527,9 @@ You want to know **what happens under-the-hood**? We've got you.
 | Process exit | Lost enqueued jobs | Jobs preserved in database |
 | DB file corruption | Data lost | Keep one backup file |
 | Memory exhaustion | Buffer overflow | Swaps to alternative buffer |
+
+> [!IMPORTANT]
+> **Autonomous Self-Healing**: The built-in **Integrity Worker** performs swarm-wide physical audits and logical repairs (orphan node recovery, storage optimization) every 10 minutes, ensuring the system stays healthy without manual intervention.
 
 ---
 
