@@ -1,5 +1,4 @@
 import * as crypto from "node:crypto";
-import type Database from "better-sqlite3";
 import { type Kysely, sql, type Transaction } from "kysely";
 import { logger } from "../util/Logger.js";
 import { getDb, getRawDb, type Schema } from "./Config.js";
@@ -102,7 +101,7 @@ export class BufferedDbPool {
 	private flushInterval: NodeJS.Timeout | null = null;
 	private cleanupInterval: NodeJS.Timeout | null = null;
 	private totalTransactions = 0;
-	private stmtCache = new Map<string, Database.Statement>();
+	private stmtCache = new Map<string, any>();
 	private parameterBuffer = new Array(2000); // Pre-allocated for chunked inserts
 	private activeBufferSize = 0;
 	private inFlightSize = 0;
@@ -209,7 +208,7 @@ export class BufferedDbPool {
 		return getDb(shardId);
 	}
 
-	private async getRaw(shardId: string = "main"): Promise<Database.Database> {
+	private async getRaw(shardId: string = "main"): Promise<any> {
 		return getRawDb(shardId);
 	}
 
@@ -332,8 +331,8 @@ export class BufferedDbPool {
 
 	private getStatement(
 		sqlStr: string,
-		raw: Database.Database,
-	): Database.Statement {
+		raw: any,
+	): any {
 		let stmt = this.stmtCache.get(sqlStr);
 		if (!stmt) {
 			stmt = raw.prepare(sqlStr);
@@ -1088,7 +1087,7 @@ export class BufferedDbPool {
 	private async executeChunkedRawInsert(
 		table: keyof Schema,
 		group: WriteOp[],
-		raw: Database.Database,
+		raw: any,
 	): Promise<number> {
 		if (group.length === 0) return 0;
 		const firstOp = group[0];
