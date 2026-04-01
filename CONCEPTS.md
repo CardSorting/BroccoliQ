@@ -461,7 +461,41 @@ BroccoliDB introduces **Sovereign Locking**—a global permission system that us
 
 ---
 
+### A Day in the Life: Sovereign Locking
+
+**The Scenario:** Agent A and Agent B both decide to update `README.md` at the same time.
+
+1.  **Agent A (10:00:01 AM)**: Calls `acquireLock('README.md')`.
+    - **BroccoliDB**: "Locked! You have 30 seconds."
+2.  **Agent A (10:00:15 AM)**: Still working... `BufferedDbPool` sends a **heartbeat**.
+    - **BroccoliDB**: "Extended! You have 30 more seconds."
+3.  **Agent B (10:00:20 AM)**: Calls `acquireLock('README.md')`.
+    - **BroccoliDB**: "Access Denied. Agent A already has the key."
+4.  **Agent A (10:00:25 AM)**: Finishes. Calls `releaseLock()`.
+    - **BroccoliDB**: "Master Key is back in the office."
+5.  **Agent B (10:00:26 AM)**: Retries `acquireLock('README.md')`.
+    - **BroccoliDB**: "Locked! It's your turn."
+
+**Why this matters:** No one ever overwrites someone else's work. The database is the unbreakable referee.
+
+---
+
 ## Chapter 10: Autonomous Integrity (Self-Cleaning)
+
+### A Day in the Life: Silent Recovery
+
+**The Scenario:** A sudden power cut corrupts a small sector of a sharded database file.
+
+1.  **Midnight Audit**: The `IntegrityWorker` wakes up and runs its rounds.
+2.  **Detection**: `PRAGMA integrity_check` fails on `shard_7`.
+3.  **Healing**: The worker sees a "dangling" knowledge node that was partially written.
+    - It **reclaims** the orphans by linking them to a "Recovered" parent.
+    - It **rebuilds** the index that was pointing to nowhere.
+4.  **The Result**: The next morning, the developer starts the system. It runs perfectly. They never even knew there was a corruption.
+
+**Why this matters:** You spend your time building features, not fixing broken databases.
+
+---
 
 ### The Problem: The Messy Workshop
 

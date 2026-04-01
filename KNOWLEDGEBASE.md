@@ -56,6 +56,34 @@ The `knowledge` table is the shared memory layer for the swarm:
 
 ---
 
+## 🧭 Decisions & Tradeoffs
+
+### Decision Tree: To Shard or Not to Shard?
+
+Choose your sharding model based on your system's bottleneck:
+
+1. **Total Writes > 50,000/sec?**
+   - **YES** → **Shard immediately**. Distributed physical IO is the only way to bypass single-file WAL saturation.
+   - **NO** → Move to Step 2.
+
+2. **Cross-Process Contention?** (Multiple agents editing the same logical resource)
+   - **YES** → **Single Shard + Sovereign Locking**. Keep the "source of truth" in one place to reduce locking coordination complexity.
+   - **NO** → Move to Step 3.
+
+3. **Data Locality?** (Can work be partitioned by project/user?)
+   - **YES** → **Shard by Partition**. Gives you horizontal scaling without coordination overhead.
+   - **NO** → **Single Shard**. Simplicity is faster until you hit scale limits.
+
+### Locking Strategy Matrix
+
+| Strategy | When to Use | Mechanism | Coordination Overhead |
+| :--- | :--- | :--- | :--- |
+| **Optimistic (Agent Shadows)** | High-volume independent writes (e.g., telemetry) | Local buffer shadowing | **None** (Lock-free) |
+| **Pessimistic (Sovereign Locks)** | Shared resource modification (e.g., editing `package.json`) | `claims` table distributed mutex | **Low** (0.4ms latency) |
+| **Atomic Batching** | Massive data ingest (e.g., initial indexing) | Level 3 Quantum Boost | **None** (Batch-level ACID) |
+
+---
+
 ## 🛠️ Maintenance & Scaling
 
 ### Scaling Out

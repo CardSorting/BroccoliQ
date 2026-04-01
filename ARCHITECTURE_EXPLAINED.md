@@ -886,6 +886,40 @@ class IntegrityWorker {
 
 ---
 
+## Chapter 13: Operational Mastery
+
+### The Sweet Spot (Tuning Guide)
+
+Benchmarks are great, but performance is a balance. Here is the recommended "Sweet Spot" for most hardware:
+
+| Variable | Recommendation | Why? |
+| :--- | :--- | :--- |
+| **`batchSize`** | **100 - 500** | Higher = less disk sync overhead. Too high = increased RAM during flush. |
+| **`concurrency`** | **10 - 100** | Matches physical CPU threads. More workers = more context switching overhead. |
+| **`flushInterval`** | **5,000ms** | Accumulate enough work for a big batch, but don't risk more than 5s of data. |
+
+> [!TIP]
+> If your database is on a **Network Mount (EFS, NFS)**, double your `batchSize` to 1,000. Large, sequential writes perform much better over network protocols than small, random ones.
+
+---
+
+### Crash Recovery: A SIGKILL Trace
+
+What happens when a worker process is killed mid-job?
+
+1.  **Process Kill**: At 10:00:00 AM, the agent process is terminated.
+2.  **Lock Expiry**: The `visibilityTimeoutMs` (e.g., 5 minutes) is ticking. No heartbeats are sent.
+3.  **The Reclamation**: At 10:05:01 AM, the `IntegrityWorker` (or another agent seeking work) runs:
+    ```sql
+    SELECT * FROM jobs WHERE status = 'processing' AND updatedAt < :timeout
+    ```
+4.  **The Reset**: The dead job is reset from `processing` to `pending`.
+5.  **The Replay**: A new agent picks up the job and finishes the work successfully.
+
+**The Magic**: Not a single job is lost. The database acts as a "durable heartbeat" for every task.
+
+---
+
 ## Summary: The Mental Model
 
 **BroccoliQ works because:**
