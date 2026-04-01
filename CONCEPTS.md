@@ -427,6 +427,92 @@ await queue.fail('job-123', 'timeout');
 
 ---
 
+---
+
+## Chapter 9: Sovereign Locking (Global Permission)
+
+### The Problem: The Shared To-Do List
+
+Imagine a team of 10 people working on the same kitchen. Two people try to chop the same onion at the same time.
+
+Implementation:
+1. Agent A: "I'm starting the onion."
+2. Agent B: "I'm starting the onion."
+3. Result: Two people, one onion, and a mess.
+
+**The issue:** Standard locks only work inside one person's head (one process). Agents in different rooms (processes) don't know what others are doing.
+
+### The Solution: The Master Key
+
+BroccoliDB introduces **Sovereign Locking**—a global permission system that uses the database as the source of truth.
+
+**How it works:**
+1. **Try to Claim:** Agent A asks: "Can I have the Master Key for 'chopping-onions'?"
+2. **Atomic Write:** The system tries to write Agent A's name in the "Master Key" office.
+3. **Winner Takes All:** If Agent A gets it, anyone else asking is told "Access Denied."
+4. **Heartbeat:** Agent A keeps telling the office "I'm still here!" every few seconds.
+
+**The magic:**
+- If Agent A falls asleep, the office notices they haven't checked in.
+- The Master Key is automatically taken back and given to the next person who asks.
+- No two people ever chop the same onion.
+
+**Result:** Global coordination across hundreds of independent agents without a central supervisor.
+
+---
+
+## Chapter 10: Autonomous Integrity (Self-Cleaning)
+
+### The Problem: The Messy Workshop
+
+A workshop where sawdust builds up, tools break, and parts get lost under the table. Eventually, you can't find anything and the floor is dangerous.
+
+**The issue:** Most systems just let data rot. Corrupted files stay corrupted. Dead records stay forever.
+
+### The Solution: The Invisible Assistant
+
+BroccoliDB has an **Autonomous Integrity Worker**—a background assistant that never sleeps.
+
+**How it works:**
+1. **Physical Audit:** Check every shelf (file) for damage or dust.
+2. **Logical Repair:** Find a spare part? Put it back where it belongs. Find a broken tool? Throw it out.
+3. **Space Management:** Sweep the floor (Vacuum) and reorganize the bins (Reindex) so you can find things faster.
+
+**The magic:**
+- You don't have to hire a librarian (DBA).
+- The system keeps itself fast and healthy while you work.
+- It prunes old memories (telemetry) so you never run out of room.
+
+**Result:** A database that stays as fast as day one, forever.
+
+---
+
+## Chapter 11: Sharded Concurrency (Scaling Out)
+
+### The Problem: The Single Door
+
+A massive stadium with 100,000 people, but only one entrance. No matter how fast people walk, the door is the limit.
+
+**The issue:** A single database file has a limit on how much "work" it can handle at once.
+
+### The Solution: The Ten-Door Stadium
+
+BroccoliDB supports **Sharding**—splitting the database into multiple independent "doors."
+
+**How it works:**
+1. **Partition:** Instead of one massive file, create 10 smaller ones.
+2. **Route:** Give 10,000 people Ticket A (Shard A) and 10,000 people Ticket B (Shard B).
+3. **Parallelism:** All 10 doors operate at the same time.
+
+**The magic:**
+- 10x more people can enter at once.
+- If one door gets stuck, the other 9 keep working.
+- You can add more doors as the crowd grows.
+
+**Result:** Horizontal growth without hitting the "single door" bottleneck.
+
+---
+
 ## Summary: The What That Matters
 
 | Mechanism | Why It Matters | Real-World Analogy |
@@ -434,28 +520,16 @@ await queue.fail('job-123', 'timeout');
 | **Dual Buffers** | Infinite write parallelism | Two baristas, no line |
 | **Agent Shadows** | Lock-free worker independence | Private offices, not open floor |
 | **Visibility Timeout** | Never lose jobs to crashes | Post office reclaiming old letters |
-| **Increment Coalescing** | 1000x faster counters | Builder's punch vs 1000 separate hammers |
-| **Circular Buffers** | Reads from RAM, not database | Line at breeze, not long checkout |
-| **Pipeline Concurrency** | 500 workers, never idle | 100 bars, never empty |
-| **Transaction Isolation** | All or nothing safety | Team meeting, not partial work |
-| **Exponential Backoff** | Eventually succeeds | Hamster in wheel, not give up |
+| **Sovereign Locking** | Global swarm coordination | The Master Key system |
+| **Autonomous Integrity** | Self-healing and auto-cleanup | The Invisible Assistant |
+| **Sharded Concurrency** | Scale beyond single file limits | The Ten-Door Stadium |
 
 ---
 
 ## Next Steps
 
 1. **guide.md** (1 hour) → Coffee shop to your system
-2. **advanced.md** (2 hours) → Performance secrets
-3. **common-mistakes.md** (15 min) → What to avoid
+2. **architecture_explained.md** (2 hours) → The deep math
+3. **usage.md** (15 min) → Copy-paste patterns
 
-Or jump to code:
-
-```typescript
-import { SqliteQueue } from 'broccoliq';
-
-const queue = new SqliteQueue({ concurrency: 1000 });
-
-// That's it. Read the code, not 50 docs.
-```
-
-**BroccoliQ is infrastructure that talks to humans.**
+**BroccoliDB: Your infrastructure should be as smart as your agents.**

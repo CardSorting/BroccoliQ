@@ -8,7 +8,9 @@
   "types": "./dist/infrastructure/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "benchmark": "npx tsx ./infrastructure/db/Benchmark.ts",
+    "update-kb": "npx tsx ./infrastructure/db/PopulateKnowledge.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",

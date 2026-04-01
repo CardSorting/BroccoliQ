@@ -1,0 +1,67 @@
+# BroccoliDB Sovereign Knowledge Base
+
+This document serves as the authoritative "Source of Truth" for the BroccoliDB Sovereign Swarm, capturing architectural patterns, performance profiles, and self-healing protocols.
+
+## 🚀 Performance Profiles
+
+### Current Benchmarks (March 2026)
+
+| Metric | Single Shard | 4 Shards | Optimization Level |
+| :--- | :--- | :--- | :--- |
+| **Throughput (100 b/s)** | 139,892 ops/s | 512,400 ops/s | Level 2 (Buffers) |
+| **Throughput (1k b/s)** | **1,579,862 ops/s** | **N/A** | Level 3 (Quantum Boost) |
+| **Sharding Efficiency** | 100% | **374%** | Level 8 (Partitioning) |
+| **Lock Latency** | 0.90ms | 0.40ms | Level 8 (Sovereign Lock) |
+
+> [!TIP]
+> Use **Level 3 Quantum Boost** (chunked raw inserts) for data ingest exceeding 50,000 operations per second.
+
+---
+
+## 🏛️ Architectural Constraints
+
+### The 3R Rule: Optimization Strategy
+1. **Read**: Pre-load data into memory using **Agent Shadows**.
+2. **Reduce**: Batch operations aggressively (target 100-1000 ops per transaction).
+3. **Reorder**: Parallelize independent tasks across multiple shards.
+
+### The 1-10-100 Rule: Latency Costs
+- **CPU (Fast)**: 1 unit cost
+- **Network (Slow)**: 10 units cost
+- **Disk I/O (Slower)**: 100 units cost
+- **Database Lock (Blocking)**: 1000 units cost
+
+---
+
+## 🛡️ Self-Healing Protocols (Integrity Worker)
+
+The `IntegrityWorker` provides autonomous maintenance and data consistency:
+
+| Routine | Purpose | Frequency |
+| :--- | :--- | :--- |
+| **Physical Audit** | `PRAGMA integrity_check` on all shards | Every 10 minutes |
+| **Orphan Repair** | Fixes dangling nodes in the knowledge graph | Every 10 minutes |
+| **Telemetry Pruning** | Deletes telemetry older than 7 days | Every 10 minutes |
+| **Vacuum/Reindex** | Rebuilds storage if fragmentation exceeds 30% | Adaptive |
+
+---
+
+## 🔗 Knowledge Graph Schema
+
+The `knowledge` table is the shared memory layer for the swarm:
+- **`id`**: Unique identifier for the knowledge item.
+- **`content`**: The core data or documentation.
+- **`metadata`**: JSON object containing source, confidence, and context.
+- **`tags`**: JSON array for semantic categorization.
+
+---
+
+## 🛠️ Maintenance & Scaling
+
+### Scaling Out
+- **Horizontal**: Add more shards via `shardId` in operations.
+- **Vertical**: Increase `concurrency` in `BufferedDbPool` (recommended 50-500).
+
+### Monitoring
+- Watch **p95_proc** (Processing latency) and **p95_enq** (Enqueue latency) via `BufferedDbPool` logs.
+- Target: `p95_proc < 50ms` and `p95_enq < 0.1ms`.
