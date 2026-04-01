@@ -22,6 +22,10 @@ queue.process(async (job) => {
 // 1,000 jobs/sec? Yes.
 // 10,000 jobs/sec? Yes.
 // Crashed mid-job? Automatic retry.
+
+// Need to scale beyond 100k jobs/sec? Just add a shard:
+const projectX = new SqliteQueue({ shardId: 'project-x' });
+await projectX.enqueue({ task: 'distributed-work' });
 ```
 
 **What makes this special:**

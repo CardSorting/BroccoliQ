@@ -20,7 +20,10 @@ interface EmailJob {
 }
 
 class EmailQueue {
-  private queue = new SqliteQueue<EmailJob>();
+  private queue = new SqliteQueue<EmailJob>({ 
+    shardId: 'emails', 
+    concurrency: 100 
+  });
 
   async sendEmail(to: string, subject: string, body: string) {
     const jobId = await this.queue.enqueue({
@@ -80,7 +83,10 @@ interface ReportJob {
 }
 
 class ReportScheduler {
-  private queue = new SqliteQueue<ReportJob>();
+  private queue = new SqliteQueue<ReportJob>({ 
+    shardId: 'reports',
+    concurrency: 10 
+  });
 
   async scheduleReport(type: ReportJob['type'], reportId: string, email: string, runAt: Date) {
     const delayMs = runAt.getTime() - Date.now();
@@ -154,7 +160,10 @@ interface PriorityJob {
 }
 
 class PriorityQueue {
-  private queue = new SqliteQueue<PriorityJob>();
+  private queue = new SqliteQueue<PriorityJob>({ 
+    shardId: 'priority-tasks',
+    concurrency: 500 
+  });
 
   // High criticality = higher priority number = runs first
   async enqueueHighPriority(type: string, data: unknown) {

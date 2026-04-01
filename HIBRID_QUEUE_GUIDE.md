@@ -17,6 +17,7 @@ class WriteThroughDualBuffer {
   private activeBuffer = bufferA;
   private inactiveBuffer = bufferB;
   private db: Database;
+  private shardId: string; // Isolated per partition
   
   addOperation(operation: WriteOp) {
     this.activeBuffer.push(operation);
@@ -102,6 +103,10 @@ class AtomicCoordinator {
     
     return jobId;
   }
+}
+
+> [!TIP]
+> **Shard Isolation**: In a Sovereign Swarm, every `shardId` has its own dedicated Atomic Coordinator and Dual Buffer. This ensures that a flush on one shard never blocks an enqueue on another.
   
   async waitForFlush(opId: string, timeout: number = 5000) {
     const job = this.pendingEnqueues.get(opId);
@@ -570,7 +575,7 @@ class LatencyMetrics {
                    └──────────┴────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                    WORKER LAYER (Outside)                        │
+│                    WORKER LAYER (Isolated per Shard)             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
 │  │ Job Handler │  │ Shadow      │  │ Completion  │              │
 │  │   System    │  │ Coordinator │  │ Processor   │              │

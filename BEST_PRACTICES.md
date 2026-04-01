@@ -569,10 +569,14 @@ class ECommerceQueue {
   private orderQueue: SqliteQueue<Order>;
   
   constructor() {
-    this.orderQueue = new SqliteQueue(OrderQueueConfig.production());
+    // Isolated shard for orders to ensure zero contention with other tasks
+    this.orderQueue = new SqliteQueue({ 
+      shardId: 'orders',
+      concurrency: 1000 
+    });
   }
   
-  // Capture all orders
+  // Capture all orders (fast memory-first ingest)
   async captureOrder(order: Order) {
     await this.orderQueue.enqueue(order);
     await db.cacheOrder(order);  // Cache for quick retrieval
@@ -608,12 +612,18 @@ class AnalyticsQueue {
   private reportingQueue: SqliteQueue<ReportRequest>;
   
   constructor() {
+    // Shard events by ingestion volume
     this.eventQueue = new SqliteQueue({ 
+      shardId: 'analytics-events',
       concurrency: 1000, 
       batchSize: 10000 
     });
     
-    this.reportingQueue = new SqliteQueue({ concurrency: 10 });
+    // Shard reports to isolate heavy computation from ingestion
+    this.reportingQueue = new SqliteQueue({ 
+      shardId: 'analytics-reports',
+      concurrency: 10 
+    });
   }
   
   // Capture events in high-throughput

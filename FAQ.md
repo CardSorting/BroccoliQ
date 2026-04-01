@@ -264,10 +264,10 @@ setInterval(() => {
 **Hybrid approach:**
 ```typescript
 // Main queue: BroccoliQ (persistence)
-const django = new DjangoQueue();
+const broccoli = new SqliteQueue();
 
 // Real-time notifications: Redis pub/sub
-redis.subscribe('django:jobs', (message) => {
+redis.subscribe('broccoliq:jobs', (message) => {
   console.log('Job created:', message);
 });
 ```
@@ -725,37 +725,27 @@ queue.process(async (job) => {
 
 ### Q: How do I scale to 100K+ ops/sec?
 
-**A:** 4 strategies.
+**A:** 4 levels of scaling:
 
-**Strategy 1: More concurrency**
+**Level 1: More concurrency**
+- Single process → 2K ops/sec
+- 50 processes × 1000 concurrency = 50K ops/sec
+
+**Level 2: Built-in Sharding**
 ```typescript
-// Single process → 2K ops/sec
-// 50 processes × 1000 concurrency = 50K ops/sec
+// Split load across physical files effortlessly
+const shardA = new SqliteQueue({ shardId: 'shard-a' });
+const shardB = new SqliteQueue({ shardId: 'shard-b' });
+
+await shardA.enqueueBatch(batch1);
+await shardB.enqueueBatch(batch2);
 ```
 
-**Strategy 2: More processes**
-```bash
-# Start 100 separate processes
-for i in {1..100}; do
-  node worker.js &
-done
-```
+**Level 3: Distributed Partitioning**
+Initialize shards on different physical NVMe drives to bypass hardware IO limits.
 
-**Strategy 3: Database sharding**
-```typescript
-class ShardedQueue {
-  private shards = 10;
-  
-  enqueueAll(items: any[]) {
-    const batches = chunk(items, 1000 / this.shards);
-    return Promise.all(
-      batches.map(batch => 
-        this.shards[i].enqueue(batch)
-      )
-    );
-  }
-}
-```
+**Level 4: Massive horizontal scaling**
+Deploy 10+ shards across 10+ worker processes for linear performance gains.
 
 **Strategy 4: Smaller jobs**
 ```typescript

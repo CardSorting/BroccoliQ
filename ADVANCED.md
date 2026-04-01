@@ -191,43 +191,28 @@ node scaler.js &
 
 ---
 
-#### Technique 3: Database Sharding (Advanced)
+#### Technique 3: Built-in Sharded Partitioning
 
-For 100K+ tasks per second, split writes across multiple databases:
+For 100K+ tasks per second, the core `SqliteQueue` now supports **Sharded Partitioning** out of the box. Instead of building a wrapper, simply initialize your queues with a `shardId`.
 
 ```typescript
-class ShardedQueue {
-  private shards: SqliteQueue[] = [];
-  private shardCount = 10;
+// 1. Define your shards (horizontal scale)
+const projectAShard = new SqliteQueue({ shardId: 'project-a' });
+const projectBShard = new SqliteQueue({ shardId: 'project-b' });
 
-  constructor() {
-    for (let i = 0; i < this.shardCount; i++) {
-      this.shards.push(new SqliteQueue({
-        dbPath: `./broccoliq-shard-${i}-${Date.now()}.db`
-      }));
-    }
-  }
+// 2. High-throughput distributed writes
+await projectAShard.enqueue({ task: 'build' });
+await projectBShard.enqueue({ task: 'test' });
 
-  private getShard(payload: any) {
-    // Hash-based distribution
-    const hash = (str: string) => 
-      str.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0);
-    return this.shards[hash(JSON.stringify(payload)) % this.shardCount];
-  }
-
-  async enqueue(payload: any) {
-    return this.getShard(payload).enqueue(payload);
-  }
-
-  async process(handler: any, options: any) {
-    // Start all shards
-    await Promise.all(this.shards.map(q => q.process(handler, options)));
-  }
-}
+// 3. Process shards in parallel across different processes
+projectAShard.process(handler, { concurrency: 1000 });
+projectBShard.process(handler, { concurrency: 1000 });
 ```
 
 **Impact:**
-- 10 databases = 10× write throughput
+- **Zero Coordination Overhead**: Each shard operates on its own physical file and WAL journal.
+- **Linear Scaling**: 10 shards = 10× write throughput beyond single-file disk limits.
+- **Built-in Integrity**: Each shard is independently audited by the `IntegrityWorker`.
 - Requires load balancer for distribution
 
 ---

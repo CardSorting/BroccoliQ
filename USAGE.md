@@ -521,6 +521,38 @@ queue.process(async (job) => {
 
 ---
 
+## Chapter 11: Scaling with Shards
+
+### The "Horizontal" Entry Point
+
+As your system grows, a single database file becomes a physical bottleneck. BroccoliQ solves this with **Sharded Partitioning**. Use shards to distribute IO load across multiple physical files.
+
+#### When to use a Shard?
+- You are hitting **50,000 writes per second** on a single machine.
+- You have naturally isolated workloads (e.g., different customers, different projects).
+- You want to reduce locking contention across hundreds of parallel workers.
+
+#### Simple Sharded Queue Configuration
+
+```typescript
+import { SqliteQueue } from 'broccoliq';
+
+// Initialize a queue for a specific shard (e.g., 'project-x')
+const projectX = new SqliteQueue({ 
+  shardId: 'project-x', 
+  concurrency: 1000 
+});
+
+// All subsequent calls use the 'project-x' physical file
+await projectX.enqueue({ task: 'high-priority-work' });
+
+// Results in: /current/dir/broccoliq_project-x.db
+```
+
+**Key Benefit**: Each `shardId` creates its own physical SQLite file and Write-Ahead Log (WAL), allowing your operating system to parallelize disk IO across CPU threads.
+
+---
+
 ## Chapter 10: Next Steps
 
 1. **advanced.md** (2 hours) → Performance optimization, scaling strategies

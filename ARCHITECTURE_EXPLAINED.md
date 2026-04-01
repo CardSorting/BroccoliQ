@@ -804,23 +804,25 @@ await queue.enqueueBatch([job1, job2]);
 
 #### Objective 3: Use Sharding
 
+The core `SqliteQueue` now handles sharding natively. Instead of building a complex wrapper, you simply initialize your queue for a specific partition.
+
 ```typescript
-class ShardedQueue {
-  private shards = 10;
-  
-  enqueue(job: Job, shardKey: any) {
-    const shardIndex = this.hash(shardKey) % this.shards;
-    return this.shards[shardIndex].enqueue(job);
-  }
-}
+// Define your shards
+const usersShard = new SqliteQueue({ shardId: 'users' });
+const telemetryShard = new SqliteQueue({ shardId: 'telemetry' });
+
+// Enqueue into specific partitions
+await usersShard.enqueue({ action: 'signup' });
+await telemetryShard.enqueue({ action: 'ping' });
+
+// Each shard operates on its own physical file and WAL journal!
 ```
 
 **Buckets:**
-- Shard 1: 10,000 users
-- Shard 2: 10,000 users
-- Shard 10: 10,000 users
+- **Shard 'users'**: /path/to/broccoliq_users.db
+- **Shard 'telemetry'**: /path/to/broccoliq_telemetry.db
 
-**Result:** 10 × (10,000 ops/sec) = 100,000 ops/sec.
+**Result:** 10 × (10,000 ops/sec) = 100,000+ ops/sec with zero coordination overhead.
 
 ---
 
