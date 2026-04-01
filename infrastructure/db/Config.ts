@@ -1,252 +1,296 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import Database from 'better-sqlite3';
-import { CompiledQuery, Kysely, SqliteDialect } from 'kysely';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import Database from "better-sqlite3";
+import { CompiledQuery, Kysely, SqliteDialect } from "kysely";
 
 export interface Schema {
-  users: {
-    id: string;
-    createdAt: number;
-  };
-  workspaces: {
-    id: string;
-    userId: string;
-    sharedMemoryLayer: string; // JSON array string
-    createdAt: number;
-  };
-  repositories: {
-    id: string;
-    workspaceId: string;
-    repoId: string;
-    repoPath: string;
-    forkedFrom?: string;
-    forkedFromRemote?: string;
-    defaultBranch: string;
-    createdAt: number;
-  };
-  branches: {
-    repoPath: string; // Composite key part: {repoPath}/{name}
-    name: string;
-    head: string;
-    isEphemeral: number; // boolean as 0/1
-    createdAt: number;
-    expiresAt: number | null;
-  };
-  tags: {
-    repoPath: string;
-    name: string;
-    head: string;
-    createdAt: number;
-  };
-  nodes: {
-    id: string;
-    repoPath: string;
-    parentId: string | null;
-    data: string; // JSON string
-    message: string;
-    timestamp: number;
-    author: string;
-    type: 'snapshot' | 'summary' | 'diff';
-    tree: string | null; // JSON string (legacy flat tree)
-    usage: string | null; // JSON string
-    metadata: string | null; // JSON string
-  };
-  trees: {
-    repoPath: string;
-    id: string; // Renamed from hash for consistency
-    entries: string; // JSON string of Record<string, TreeEntry>
-    createdAt: number;
-  };
-  files: {
-    id: string; // CAS hash
-    path: string;
-    content: string;
-    encoding: string;
-    size: number;
-    updatedAt: number;
-    author: string;
-  };
-  reflog: {
-    id: string;
-    repoPath: string;
-    ref: string;
-    oldHead: string | null;
-    newHead: string;
-    author: string;
-    message: string;
-    timestamp: number;
-    operation: string;
-  };
-  stashes: {
-    id: string;
-    repoPath: string;
-    branch: string;
-    nodeId: string;
-    data: string; // JSON string
-    tree: string; // JSON string
-    label: string;
-    createdAt: number;
-  };
-  claims: {
-    repoPath: string;
-    branch: string;
-    path: string; // encoded path
-    author: string;
-    timestamp: number;
-    expiresAt: number;
-  };
-  telemetry: {
-    id: string;
-    repoPath: string;
-    agentId: string;
-    taskId: string | null;
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-    modelId: string;
-    cost: number;
-    timestamp: number;
-    environment: string; // JSON string
-  };
-  telemetry_aggregates: {
-    repoPath: string;
-    id: string; // 'global', 'agent_{id}', 'task_{id}'
-    totalCommits: number;
-    totalTokens: number;
-    totalCost: number;
-  };
-  agents: {
-    id: string; // agentId
-    userId: string;
-    name: string;
-    role: string;
-    permissions: string; // JSON string
-    memoryLayer: string; // JSON string
-    createdAt: number;
-    lastActive: number;
-  };
-  knowledge: {
-    id: string; // itemId
-    userId: string;
-    type: string;
-    content: string;
-    tags: string; // JSON string
-    edges: string; // JSON string
-    inboundEdges: string; // JSON string
-    embedding: string | null; // JSON string
-    confidence: number;
-    hubScore: number;
-    expiresAt: number | null;
-    metadata: string; // JSON string
-    createdAt: number;
-  };
-  tasks: {
-    id: string; // taskId
-    userId: string;
-    agentId: string;
-    status: string;
-    description: string;
-    complexity: number;
-    linkedKnowledgeIds: string; // JSON string
-    result: string | null; // JSON string
-    createdAt: number;
-    updatedAt: number;
-  };
-  audit_events: {
-    id: string;
-    userId: string;
-    agentId: string | null;
-    type: string;
-    data: string;
-    createdAt: number;
-  };
-  settings: {
-    key: string;
-    value: string;
-    updatedAt: number;
-  };
-  logical_constraints: {
-    id: string;
-    repoPath: string;
-    pathPattern: string; // glob pattern
-    knowledgeId: string;
-    severity: 'blocking' | 'warning';
-    createdAt: number;
-  };
-  knowledge_edges: {
-    sourceId: string;
-    targetId: string;
-    type: string;
-    weight: number;
-  };
-  decisions: {
-    id: string;
-    repoPath: string;
-    agentId: string;
-    taskId: string | null;
-    decision: string;
-    rationale: string;
-    knowledgeIds: string; // JSON array of contributing knowledge
-    timestamp: number;
-  };
-  queue_jobs: {
-    id: string;
-    payload: string;
-    status: 'pending' | 'processing' | 'done' | 'failed';
-    priority: number;
-    attempts: number;
-    maxAttempts: number;
-    runAt: number;
-    error: string | null;
-    createdAt: number;
-    updatedAt: number;
-  };
-  queue_settings: {
-    key: string;
-    value: string;
-    updatedAt: number;
-  };
+	users: {
+		id: string;
+		createdAt: number;
+	};
+	workspaces: {
+		id: string;
+		userId: string;
+		sharedMemoryLayer: string; // JSON array string
+		createdAt: number;
+	};
+	repositories: {
+		id: string;
+		workspaceId: string;
+		repoId: string;
+		repoPath: string;
+		forkedFrom?: string;
+		forkedFromRemote?: string;
+		defaultBranch: string;
+		createdAt: number;
+	};
+	branches: {
+		repoPath: string; // Composite key part: {repoPath}/{name}
+		name: string;
+		head: string;
+		isEphemeral: number; // boolean as 0/1
+		createdAt: number;
+		expiresAt: number | null;
+	};
+	tags: {
+		repoPath: string;
+		name: string;
+		head: string;
+		createdAt: number;
+	};
+	nodes: {
+		id: string;
+		repoPath: string;
+		parentId: string | null;
+		data: string; // JSON string
+		message: string;
+		timestamp: number;
+		author: string;
+		type: "snapshot" | "summary" | "diff";
+		tree: string | null; // JSON string (legacy flat tree)
+		usage: string | null; // JSON string
+		metadata: string | null; // JSON string
+	};
+	trees: {
+		repoPath: string;
+		id: string; // Renamed from hash for consistency
+		entries: string; // JSON string of Record<string, TreeEntry>
+		createdAt: number;
+	};
+	files: {
+		id: string; // CAS hash
+		path: string;
+		content: string;
+		encoding: string;
+		size: number;
+		updatedAt: number;
+		author: string;
+	};
+	reflog: {
+		id: string;
+		repoPath: string;
+		ref: string;
+		oldHead: string | null;
+		newHead: string;
+		author: string;
+		message: string;
+		timestamp: number;
+		operation: string;
+	};
+	stashes: {
+		id: string;
+		repoPath: string;
+		branch: string;
+		nodeId: string;
+		data: string; // JSON string
+		tree: string; // JSON string
+		label: string;
+		createdAt: number;
+	};
+	claims: {
+		repoPath: string;
+		branch: string;
+		path: string; // encoded path
+		author: string;
+		timestamp: number;
+		expiresAt: number;
+	};
+	telemetry: {
+		id: string;
+		repoPath: string;
+		agentId: string;
+		taskId: string | null;
+		promptTokens: number;
+		completionTokens: number;
+		totalTokens: number;
+		modelId: string;
+		cost: number;
+		timestamp: number;
+		environment: string; // JSON string
+	};
+	telemetry_aggregates: {
+		repoPath: string;
+		id: string; // 'global', 'agent_{id}', 'task_{id}'
+		totalCommits: number;
+		totalTokens: number;
+		totalCost: number;
+	};
+	agents: {
+		id: string; // agentId
+		userId: string;
+		name: string;
+		role: string;
+		permissions: string; // JSON string
+		memoryLayer: string; // JSON string
+		createdAt: number;
+		lastActive: number;
+	};
+	knowledge: {
+		id: string; // itemId
+		userId: string;
+		type: string;
+		content: string;
+		tags: string; // JSON string
+		edges: string; // JSON string
+		inboundEdges: string; // JSON string
+		embedding: string | null; // JSON string
+		confidence: number;
+		hubScore: number;
+		expiresAt: number | null;
+		metadata: string; // JSON string
+		createdAt: number;
+	};
+	tasks: {
+		id: string; // taskId
+		userId: string;
+		agentId: string;
+		status: string;
+		description: string;
+		complexity: number;
+		linkedKnowledgeIds: string; // JSON string
+		result: string | null; // JSON string
+		createdAt: number;
+		updatedAt: number;
+	};
+	audit_events: {
+		id: string;
+		userId: string;
+		agentId: string | null;
+		type: string;
+		data: string;
+		createdAt: number;
+	};
+	settings: {
+		key: string;
+		value: string;
+		updatedAt: number;
+	};
+	logical_constraints: {
+		id: string;
+		repoPath: string;
+		pathPattern: string; // glob pattern
+		knowledgeId: string;
+		severity: "blocking" | "warning";
+		createdAt: number;
+	};
+	knowledge_edges: {
+		sourceId: string;
+		targetId: string;
+		type: string;
+		weight: number;
+	};
+	decisions: {
+		id: string;
+		repoPath: string;
+		agentId: string;
+		taskId: string | null;
+		decision: string;
+		rationale: string;
+		knowledgeIds: string; // JSON array of contributing knowledge
+		timestamp: number;
+	};
+	queue_jobs: {
+		id: string;
+		payload: string;
+		status: "pending" | "processing" | "done" | "failed";
+		priority: number;
+		attempts: number;
+		maxAttempts: number;
+		runAt: number;
+		error: string | null;
+		createdAt: number;
+		updatedAt: number;
+	};
+	queue_settings: {
+		key: string;
+		value: string;
+		updatedAt: number;
+	};
 }
 
-let _db: Kysely<Schema> | null = null;
-let _rawDb: Database.Database | null = null;
+const _dbs = new Map<string, Kysely<Schema>>();
+const _rawDbs = new Map<string, Database.Database>();
 let _dbPath: string | null = null;
+const _isInitialized = new Set<string>();
 
 export function setDbPath(dbPath: string) {
-  _dbPath = dbPath;
+	_dbPath = dbPath;
 }
 
-export async function getDb(): Promise<Kysely<Schema>> {
-  if (_db) return _db;
-  if (!_dbPath) {
-    // Default path if not set
-    _dbPath = path.resolve(process.cwd(), 'broccoliq.db');
-  }
+export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
+	const existing = _dbs.get(shardId);
+	if (existing) return existing;
 
-  const dbDir = path.dirname(_dbPath);
-  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+	if (!_dbPath) {
+		_dbPath = path.resolve(process.cwd(), "broccoliq.db");
+	}
 
-  _rawDb = new Database(_dbPath);
-  _db = new Kysely<Schema>({
-    dialect: new SqliteDialect({
-      database: _rawDb,
-    }),
-  });
+	const dbDir = path.dirname(_dbPath);
+	if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-  const execute = (q: string) => _db?.executeQuery(CompiledQuery.raw(q));
+	const shardPath =
+		shardId === "main"
+			? _dbPath
+			: path.join(dbDir, `${path.basename(_dbPath, ".db")}_${shardId}.db`);
 
-  // Performance Tweaks (WAL Mode)
-  await execute('PRAGMA journal_mode = WAL;');
-  await execute('PRAGMA synchronous = NORMAL;');
-  await execute('PRAGMA foreign_keys = ON;');
+	const rawDb = new Database(shardPath);
+	const db = new Kysely<Schema>({
+		dialect: new SqliteDialect({
+			database: rawDb,
+		}),
+	});
 
-  // Schema Initialization
-  await execute(`CREATE TABLE IF NOT EXISTS users (
+	_rawDbs.set(shardId, rawDb);
+	_dbs.set(shardId, db);
+
+	if (!_isInitialized.has(shardId)) {
+		await initializeSchema(db);
+		_isInitialized.add(shardId);
+	}
+
+	return db;
+}
+
+export async function getRawDb(
+	shardId: string = "main",
+): Promise<Database.Database> {
+	const existing = _rawDbs.get(shardId);
+	if (existing) return existing;
+
+	// Initialize if missing
+	await getDb(shardId);
+	const initialized = _rawDbs.get(shardId);
+	if (!initialized)
+		throw new Error(`Failed to initialize raw DB for shard: ${shardId}`);
+	return initialized;
+}
+
+export function getActiveShards(): string[] {
+	return Array.from(_dbs.keys());
+}
+
+async function applyPragmas(db: Kysely<Schema>) {
+	const execute = (q: string) => db.executeQuery(CompiledQuery.raw(q));
+	await execute("PRAGMA journal_mode = WAL;");
+	await execute("PRAGMA synchronous = NORMAL;");
+	await execute("PRAGMA foreign_keys = ON;");
+	await execute("PRAGMA cache_size = -128000;");
+	await execute("PRAGMA temp_store = MEMORY;");
+	await execute("PRAGMA mmap_size = 2147483648;");
+	await execute("PRAGMA threads = 4;");
+}
+
+async function initializeSchema(db: Kysely<Schema>) {
+	await applyPragmas(db);
+	const execute = (q: string) => db.executeQuery(CompiledQuery.raw(q));
+
+	// Schema Initialization
+	await execute(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     createdAt BIGINT
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS workspaces (
+	await execute(`CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     sharedMemoryLayer TEXT,
@@ -254,7 +298,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(userId) REFERENCES users(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS repositories (
+	await execute(`CREATE TABLE IF NOT EXISTS repositories (
     id TEXT PRIMARY KEY,
     workspaceId TEXT NOT NULL,
     repoId TEXT NOT NULL,
@@ -266,7 +310,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(workspaceId) REFERENCES workspaces(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS branches (
+	await execute(`CREATE TABLE IF NOT EXISTS branches (
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
@@ -276,7 +320,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     PRIMARY KEY(repoPath, name)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS tags (
+	await execute(`CREATE TABLE IF NOT EXISTS tags (
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
@@ -284,7 +328,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     PRIMARY KEY(repoPath, name)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS nodes (
+	await execute(`CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     parentId TEXT,
@@ -298,7 +342,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     metadata TEXT
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS trees (
+	await execute(`CREATE TABLE IF NOT EXISTS trees (
     repoPath TEXT NOT NULL,
     id TEXT NOT NULL,
     entries TEXT NOT NULL,
@@ -306,7 +350,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     PRIMARY KEY(repoPath, id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS files (
+	await execute(`CREATE TABLE IF NOT EXISTS files (
     id TEXT PRIMARY KEY,
     path TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -316,7 +360,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     author TEXT NOT NULL
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS reflog (
+	await execute(`CREATE TABLE IF NOT EXISTS reflog (
     id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     ref TEXT NOT NULL,
@@ -328,7 +372,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     operation TEXT NOT NULL
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS stashes (
+	await execute(`CREATE TABLE IF NOT EXISTS stashes (
     id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     branch TEXT NOT NULL,
@@ -339,7 +383,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     createdAt BIGINT NOT NULL
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS claims (
+	await execute(`CREATE TABLE IF NOT EXISTS claims (
     repoPath TEXT NOT NULL,
     branch TEXT NOT NULL,
     path TEXT NOT NULL,
@@ -349,7 +393,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     PRIMARY KEY(repoPath, branch, path)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS telemetry (
+	await execute(`CREATE TABLE IF NOT EXISTS telemetry (
     id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     agentId TEXT NOT NULL,
@@ -363,7 +407,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     environment TEXT NOT NULL
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS telemetry_aggregates (
+	await execute(`CREATE TABLE IF NOT EXISTS telemetry_aggregates (
     repoPath TEXT NOT NULL,
     id TEXT NOT NULL,
     totalCommits INTEGER DEFAULT 0,
@@ -372,13 +416,19 @@ export async function getDb(): Promise<Kysely<Schema>> {
     PRIMARY KEY(repoPath, id)
   )`);
 
-  // Indices
-  await execute(`CREATE INDEX IF NOT EXISTS idx_nodes_repo ON nodes(repoPath)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_branches_repo ON branches(repoPath)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_telemetry_repo ON telemetry(repoPath)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_telemetry_task ON telemetry(taskId)`);
+	// Indices
+	await execute(`CREATE INDEX IF NOT EXISTS idx_nodes_repo ON nodes(repoPath)`);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_branches_repo ON branches(repoPath)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_telemetry_repo ON telemetry(repoPath)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_telemetry_task ON telemetry(taskId)`,
+	);
 
-  await execute(`CREATE TABLE IF NOT EXISTS agents (
+	await execute(`CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -390,7 +440,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(userId) REFERENCES users(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS knowledge (
+	await execute(`CREATE TABLE IF NOT EXISTS knowledge (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     type TEXT NOT NULL,
@@ -407,7 +457,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(userId) REFERENCES users(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS tasks (
+	await execute(`CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     agentId TEXT NOT NULL,
@@ -422,7 +472,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(agentId) REFERENCES agents(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS audit_events (
+	await execute(`CREATE TABLE IF NOT EXISTS audit_events (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     agentId TEXT,
@@ -432,13 +482,13 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(userId) REFERENCES users(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS settings (
+	await execute(`CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updatedAt BIGINT NOT NULL
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS logical_constraints (
+	await execute(`CREATE TABLE IF NOT EXISTS logical_constraints (
     id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     pathPattern TEXT NOT NULL,
@@ -448,12 +498,14 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(knowledgeId) REFERENCES knowledge(id)
   )`);
 
-  await execute(`CREATE INDEX IF NOT EXISTS idx_logical_repo ON logical_constraints(repoPath)`);
-  await execute(
-    `CREATE INDEX IF NOT EXISTS idx_logical_pattern ON logical_constraints(pathPattern)`
-  );
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_logical_repo ON logical_constraints(repoPath)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_logical_pattern ON logical_constraints(pathPattern)`,
+	);
 
-  await execute(`CREATE TABLE IF NOT EXISTS knowledge_edges (
+	await execute(`CREATE TABLE IF NOT EXISTS knowledge_edges (
     sourceId TEXT NOT NULL,
     targetId TEXT NOT NULL,
     type TEXT NOT NULL,
@@ -463,7 +515,7 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(targetId) REFERENCES knowledge(id)
   )`);
 
-  await execute(`CREATE TABLE IF NOT EXISTS decisions (
+	await execute(`CREATE TABLE IF NOT EXISTS decisions (
     id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     agentId TEXT NOT NULL,
@@ -475,13 +527,21 @@ export async function getDb(): Promise<Kysely<Schema>> {
     FOREIGN KEY(agentId) REFERENCES agents(id)
   )`);
 
-  await execute(`CREATE INDEX IF NOT EXISTS idx_edges_source ON knowledge_edges(sourceId)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_edges_target ON knowledge_edges(targetId)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_decisions_repo ON decisions(repoPath)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_decisions_task ON decisions(taskId)`);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_edges_source ON knowledge_edges(sourceId)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_edges_target ON knowledge_edges(targetId)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_decisions_repo ON decisions(repoPath)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_decisions_task ON decisions(taskId)`,
+	);
 
-  // Queue Tables
-  await execute(`CREATE TABLE IF NOT EXISTS queue_jobs (
+	// Queue Tables
+	await execute(`CREATE TABLE IF NOT EXISTS queue_jobs (
     id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -494,28 +554,31 @@ export async function getDb(): Promise<Kysely<Schema>> {
     updatedAt BIGINT
   )`);
 
-  await execute(
-    `CREATE INDEX IF NOT EXISTS idx_poll_order ON queue_jobs(status, runAt, priority DESC, createdAt ASC)`
-  );
-  await execute(`CREATE INDEX IF NOT EXISTS idx_cleanup ON queue_jobs(status, updatedAt)`);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_poll_order ON queue_jobs(status, runAt, priority DESC, createdAt ASC)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_cleanup ON queue_jobs(status, updatedAt)`,
+	);
 
-  await execute(`CREATE TABLE IF NOT EXISTS queue_settings (
+	await execute(`CREATE TABLE IF NOT EXISTS queue_settings (
     key TEXT PRIMARY KEY,
     value TEXT,
     updatedAt BIGINT
   )`);
 
-  await execute(`CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(userId)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_knowledge_user ON knowledge(userId)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(userId)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agentId)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_events(type)`);
-  await execute(`CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agentId)`);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(userId)`);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_user ON knowledge(userId)`,
+	);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(userId)`);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agentId)`);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_events(type)`,
+	);
+	await execute(
+		`CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agentId)`,
+	);
 
-  return _db;
-}
-
-export async function getRawDb(): Promise<Database.Database> {
-  if (!_rawDb) await getDb();
-  return _rawDb!;
+	return db;
 }
