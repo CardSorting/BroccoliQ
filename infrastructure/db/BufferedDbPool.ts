@@ -106,8 +106,10 @@ export class BufferedDbPool {
 	private activeBufferSize = 0;
 	private inFlightSize = 0;
 	// Level 7: Event Horizon Status Index (O(1) Query Mapping)
-	private activeIndex = new Map<keyof Schema, Map<string, Set<WriteOp>>>();
-	private inFlightIndex = new Map<keyof Schema, Map<string, Set<WriteOp>>>();
+	private activeIndex = new Map<keyof Schema, Map<string, Map<string, WriteOp>>>(); // status -> id -> op
+	private inFlightIndex = new Map<keyof Schema, Map<string, Map<string, WriteOp>>>();
+	private activeIndexById = new Map<keyof Schema, Map<string, WriteOp>>(); // id -> op
+	private inFlightIndexById = new Map<keyof Schema, Map<string, WriteOp>>();
 	private warmedIndices = new Set<string>(); // Level 9: Authoritative Memory Indices
 
 	// Mutex cache with heartbeats
@@ -387,24 +389,43 @@ export class BufferedDbPool {
 				op.dedupKey = `${op.table}:${op.where.value}`;
 			}
 
-			// Level 7: Index maintenance (O(1))
+			// Level 7: Index maintenance (O(1) authoritative ID mapping)
 			if (
 				op.table === "queue_jobs" &&
 				op.values &&
-				(op.values as Record<string, unknown>).status
+				(op.values as Record<string, unknown>).status &&
+				op.where && !Array.isArray(op.where) && op.where.column === "id"
 			) {
+				const ids = Array.isArray(op.where.value) ? op.where.value.map(String) : [String(op.where.value)];
 				let tableIndex = this.activeIndex.get(op.table);
 				if (!tableIndex) {
 					tableIndex = new Map();
 					this.activeIndex.set(op.table, tableIndex);
 				}
+
+				const statuses = ["pending", "processing", "done", "failed"];
 				const key = `status:${(op.values as Record<string, unknown>).status}`;
-				let set = tableIndex.get(key);
-				if (!set) {
-					set = new Set();
-					tableIndex.set(key, set);
+				let idMap = tableIndex.get(key);
+				if (!idMap) {
+					idMap = new Map();
+					tableIndex.set(key, idMap);
 				}
-				set.add(op);
+
+				// GLOBAL ID MAP: Track latest op for this ID in active buffer
+				let globalIdMap = this.activeIndexById.get(op.table);
+				if (!globalIdMap) {
+					globalIdMap = new Map();
+					this.activeIndexById.set(op.table, globalIdMap);
+				}
+
+				for (const jobId of ids) {
+					// AUTHORITATIVE CLEANUP: Remove ID from all other status sets
+					for (const s of statuses) {
+						tableIndex.get(`status:${s}`)?.delete(jobId);
+					}
+					idMap.set(jobId, op);
+					globalIdMap.set(jobId, op);
+				}
 			}
 		}
 
@@ -479,24 +500,42 @@ export class BufferedDbPool {
 					tableBuffer.push(op);
 					this.activeBufferSize++;
 
-					// Level 7: Index maintenance (O(1))
+					// Level 7: Index maintenance (O(1) migration)
 					if (
 						op.table === "queue_jobs" &&
 						op.values &&
-						(op.values as Record<string, unknown>).status
+						(op.values as Record<string, unknown>).status &&
+						op.where && !Array.isArray(op.where) && op.where.column === "id"
 					) {
+						const ids = Array.isArray(op.where.value) ? op.where.value.map(String) : [String(op.where.value)];
 						let tableIndex = this.activeIndex.get(op.table);
 						if (!tableIndex) {
 							tableIndex = new Map();
 							this.activeIndex.set(op.table, tableIndex);
 						}
+						
+						const statuses = ["pending", "processing", "done", "failed"];
 						const key = `status:${(op.values as Record<string, unknown>).status}`;
-						let set = tableIndex.get(key);
-						if (!set) {
-							set = new Set();
-							tableIndex.set(key, set);
+						let idMap = tableIndex.get(key);
+						if (!idMap) {
+							idMap = new Map();
+							tableIndex.set(key, idMap);
 						}
-						set.add(op);
+
+						// GLOBAL ID MAP: Track latest op for this ID in active buffer
+						let globalIdMap = this.activeIndexById.get(op.table);
+						if (!globalIdMap) {
+							globalIdMap = new Map();
+							this.activeIndexById.set(op.table, globalIdMap);
+						}
+
+						for (const jobId of ids) {
+							for (const s of statuses) {
+								tableIndex.get(`status:${s}`)?.delete(jobId);
+							}
+							idMap.set(jobId, op);
+							globalIdMap.set(jobId, op);
+						}
 					}
 				}
 			}
@@ -567,6 +606,8 @@ export class BufferedDbPool {
 					// Level 7: Index Swap
 					this.inFlightIndex = this.activeIndex;
 					this.activeIndex = new Map();
+					this.inFlightIndexById = this.activeIndexById;
+					this.activeIndexById = new Map();
 
 					opsToFlush = Array.from(dirtyBuffer.values())
 						.flat()
@@ -665,20 +706,38 @@ export class BufferedDbPool {
 						if (
 							op.table === "queue_jobs" &&
 							op.values &&
-							(op.values as Record<string, unknown>).status
+							(op.values as Record<string, unknown>).status &&
+							op.where && !Array.isArray(op.where) && op.where.column === "id"
 						) {
+							const ids = Array.isArray(op.where.value) ? op.where.value.map(String) : [String(op.where.value)];
 							let tableIndex = this.activeIndex.get(op.table);
 							if (!tableIndex) {
 								tableIndex = new Map();
 								this.activeIndex.set(op.table, tableIndex);
 							}
+							
+							const statuses = ["pending", "processing", "done", "failed"];
 							const key = `status:${(op.values as Record<string, unknown>).status}`;
-							let set = tableIndex.get(key);
-							if (!set) {
-								set = new Set();
-								tableIndex.set(key, set);
+							let idMap = tableIndex.get(key);
+							if (!idMap) {
+								idMap = new Map();
+								tableIndex.set(key, idMap);
 							}
-							set.add(op);
+
+							// GLOBAL ID MAP: Track latest op for this ID in active buffer
+							let globalIdMap = this.activeIndexById.get(op.table);
+							if (!globalIdMap) {
+								globalIdMap = new Map();
+								this.activeIndexById.set(op.table, globalIdMap);
+							}
+
+							for (const jobId of ids) {
+								for (const s of statuses) {
+									tableIndex.get(`status:${s}`)?.delete(jobId);
+								}
+								idMap.set(jobId, op);
+								globalIdMap.set(jobId, op);
+							}
 						}
 					}
 				}
@@ -772,8 +831,58 @@ export class BufferedDbPool {
 		const release = await this.stateMutex.acquire();
 		try {
 			const db = await this.ensureDb(shardId);
-			const conditions = normalizeWhere(where);
-			const statusCond = conditions.find(
+		const conditions = normalizeWhere(where);
+		
+		const matches = (r: unknown, queryConditions: WhereCondition[]) => {
+			const row = r as Record<string, unknown>;
+			if (queryConditions.length === 0) return true;
+			return queryConditions.every((c) => {
+				const val = row[c.column];
+				const opStr = (c.operator || "=").toUpperCase();
+
+				if (opStr === "IN") {
+					if (Array.isArray(c.value))
+						return (c.value as unknown[]).includes(val);
+					return val === c.value;
+				}
+				if (opStr === "=") return val === c.value;
+				if (opStr === "!=") return val !== c.value;
+				if (opStr === ">") return Number(val) > Number(c.value);
+				if (opStr === "<") return Number(val) < Number(c.value);
+				if (opStr === ">=") return Number(val) >= Number(c.value);
+				if (opStr === "<=")
+					return val !== null && Number(val) <= Number(c.value);
+				if (opStr === "IS" || opStr === "IS NOT") {
+					if (c.value === null) return opStr === "IS" ? val === null : val !== null;
+				}
+				return false;
+			});
+		};
+
+		// Level 7.5: Cross-Buffer Override Detection (O(1))
+		const isOverriddenByNewerBuffer = (jobId: string, currentLayer: "disk" | "inFlight"): boolean => {
+			// 1. Check active buffer (newest)
+			const activeOp = this.activeIndexById.get(table)?.get(jobId);
+			if (activeOp && activeOp.values) {
+				const nextStatus = (activeOp.values as Record<string, unknown>).status;
+				if (nextStatus !== undefined) {
+					// If the newest status doesn't match our criteria, it's overridden
+					return !matches({ id: jobId, ...activeOp.values }, conditions);
+				}
+			}
+
+			// 2. Check in-flight buffer (middle layer)
+			if (currentLayer === "disk") {
+				const inFlightOp = this.inFlightIndexById.get(table)?.get(jobId);
+				if (inFlightOp && inFlightOp.values) {
+					return !matches({ id: jobId, ...inFlightOp.values }, conditions);
+				}
+			}
+
+			return false;
+		};
+
+		const statusCond = conditions.find(
 				(c) =>
 					(c.column === "status" || c.column === "type") &&
 					(c.operator === "=" || !c.operator),
@@ -813,11 +922,18 @@ export class BufferedDbPool {
 					query = query.limit(options.limit);
 				}
 				diskResults = (await query.execute()) as Schema[T][];
+				
+				// CROSS-BUFFER FILTER FOR DISK RESULTS
+				diskResults = diskResults.filter(row => {
+					const jobId = (row as any).id ? String((row as any).id) : null;
+					if (!jobId) return true;
+					return !isOverriddenByNewerBuffer(jobId, "disk");
+				});
 			}
 
 			const applyOps = (
 				ops: WriteOp[],
-				sourceIndex: Map<string, Set<WriteOp>> | undefined,
+				sourceIndex: Map<string, Map<string, WriteOp>> | undefined,
 				target: Schema[T][],
 			) => {
 				// Level 7: Fast-Path Status Indexing
@@ -830,8 +946,8 @@ export class BufferedDbPool {
 
 				if (statusCond && sourceIndex) {
 					const key = `${statusCond.column}:${statusCond.value}`;
-					const set = sourceIndex.get(key);
-					tableOps = set || [];
+					const idMap = sourceIndex.get(key);
+					tableOps = idMap ? idMap.values() : [];
 				} else {
 					tableOps = ops;
 				}
@@ -839,6 +955,12 @@ export class BufferedDbPool {
 				for (const op of tableOps) {
 					// Additional safety check if we're using a full buffer instead of an index
 					if (op.table !== table) continue;
+
+					// CROSS-BUFFER FILTER FOR IN-FLIGHT RESULTS (only if checking inFlightOps)
+					if (sourceIndex === this.inFlightIndex.get(table)) {
+						const jobId = String((op.where as any)?.value);
+						if (jobId && isOverriddenByNewerBuffer(jobId, "inFlight")) continue;
+					}
 
 					const applyValues = (
 						existing: unknown,
@@ -866,7 +988,7 @@ export class BufferedDbPool {
 						return null;
 					});
 
-					const matches = (r: unknown, queryConditions: WhereCondition[]) => {
+					const matchesOp = (r: unknown, queryConditions: WhereCondition[]) => {
 						const row = r as Record<string, unknown>;
 						if (queryConditions.length === 0) return true;
 						return queryConditions.every((c, idx) => {
@@ -874,12 +996,8 @@ export class BufferedDbPool {
 							const opStr = (c.operator || "=").toUpperCase();
 
 							if (opStr === "IN") {
-								// If this is matching against the op's where, use the pre-computed set
-								// If this is matching against the SELECT's where, just use the array
-								if (queryConditions === opWhere) {
-									const set = inSets[idx];
-									if (set) return set.has(val);
-								}
+								const set = inSets[idx];
+								if (set) return set.has(val);
 								if (Array.isArray(c.value))
 									return (c.value as unknown[]).includes(val);
 								return val === c.value;
@@ -930,7 +1048,7 @@ export class BufferedDbPool {
 					} else if (op.type === "update" && op.values) {
 						for (let i = target.length - 1; i >= 0; i--) {
 							const existing = target[i];
-							if (existing && matches(existing, opWhere)) {
+							if (existing && matchesOp(existing, opWhere)) {
 								const next = applyValues(
 									existing,
 									op.values as Record<string, unknown>,
@@ -946,7 +1064,7 @@ export class BufferedDbPool {
 					} else if (op.type === "delete") {
 						for (let i = target.length - 1; i >= 0; i--) {
 							const existing = target[i];
-							if (existing && matches(existing, opWhere)) target.splice(i, 1);
+							if (existing && matchesOp(existing, opWhere)) target.splice(i, 1);
 						}
 					}
 				}
@@ -1289,21 +1407,23 @@ export class BufferedDbPool {
 		}
 
 		const key = `${statusCol}:${statusValue}`;
-		let set = tableIndex.get(key);
-		if (!set) {
-			set = new Set();
-			tableIndex.set(key, set);
+		let idMap = tableIndex.get(key);
+		if (!idMap) {
+			idMap = new Map();
+			tableIndex.set(key, idMap);
 		}
 
 		// Convert disk rows into a "Virtual WriteOp" to satisfy Level 1 Select logic
 		for (const row of rows) {
+			const jobId = String((row as any).id);
 			const op: WriteOp = {
 				type: "insert",
 				table: table as never,
 				values: row as never,
 				hasIncrements: false,
+				where: { column: "id", value: jobId }
 			};
-			set.add(op);
+			idMap.set(jobId, op);
 		}
 
 		// Level 9: Mark as Authoritative
