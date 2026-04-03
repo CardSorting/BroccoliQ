@@ -12,31 +12,23 @@ This chapter peels back the curtain. No more "does it work" questions—this is 
 
 The BroccoliQ Sovereign Hive was **architected for the Bun engine's direct SQLite integration**. While it maintains Node.js compatibility, the system's modular `BufferedDbPool` is designed specifically to leverage sharded WAL journals for 1,000,000+ operations per second.
 
-```typescript
-// The Sharded Memory-to-Disk Pipeline:
-/*
-┌─────────────────────────────────┐
-│   MEMORY BUFFER (Per Shard)     │
-│  ┌──────────┐  ┌──────────┐    │
-│  │ Active   │  │In-Flight │    │
-│  │ Buffer   │  │ Buffer   │    │
-│  └──────────┘  └──────────┘    │
-│         ↓           ↑           │
-│  ┌──────────────────────────┐  │
-│  │  Level 7 Indexing        │  │ 
-│  │  (O(1) Status Filtering) │  │
-│  └──────────────────────────┘  │
-└─────────────────────────────────┘
-           ↓
-           ↓ (Swap & Flush)
-┌─────────────────────────────────┐
-│   PHYSICAL SHARDS (Persistence) │
-│  ┌──────────┐  ┌──────────┐    │
-│  │ shard-1  │  │ shard-N  │    │
-│  │ (.db)    │  │ (.db)    │    │
-│  └──────────┘  └──────────┘    │
-└─────────────────────────────────┘
-*/
+### The "Dual Buffer" Pipeline at a Glance
+```mermaid
+graph LR
+  subgraph "Shard Memory State"
+    AB[Active Buffer] -- "Swap" --> IB[In-Flight Buffer]
+    IB -- "Flush" --> PS[Physical Shard]
+    PS -- "Journal" --> IB
+  end
+  
+  W1[Write Operation] -- "push()" --> AB
+  RE[Read Engine] -- "query()" --> AB
+  RE -- "query()" --> IB
+  RE -- "query()" --> PS
+  
+  style AB fill:#4caf50,color:#fff
+  style IB fill:#ff9800,color:#fff
+  style PS fill:#2196f3,color:#fff
 ```
 
 When you call `push(operation)`, the system injects the data into the **Active Buffer** of the target shard. This is a pure memory operation (0ms latency).
@@ -96,6 +88,24 @@ await dbPool.push({ type: 'update', table: 'tasks', ... }, agentId);
 
 // Atomic Commit: Move shadow contents to shard buffers
 await dbPool.commitWork(agentId);
+```
+
+### Agent Shadow Lifecycle
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant S as Agent Shadow
+    participant H as Sovereign Hive (Shard)
+    
+    A->>S: beginWork(id)
+    Note over S: Isolated Workspace Initialized
+    A->>S: push(op1)
+    A->>S: push(op2)
+    Note over S: Buffer grows independently
+    A->>H: commitWork(id)
+    S->>H: Atomic Batch Inject
+    Note over H: Operations land in Active Buffer
+    H-->>A: Success
 ```
 
 **Why Shadows Matter:**

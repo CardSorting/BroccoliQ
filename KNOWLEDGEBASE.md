@@ -27,6 +27,20 @@ This repository contains the authoritative facts, patterns, and architectural in
 
 The `/infrastructure/db/pool/` directory is the heart of the Level 10 architecture:
 
+#### Hive Component Responsibility Map
+```mermaid
+graph TD
+  Index[index.ts: Orchestrator] --> Shards[ShardState: Buffers/Partition]
+  Index --> Locker[Locker: Global Mutex]
+  
+  Shards -- "Execution" --> Ops[Operations: Quantum Boost]
+  Shards -- "Visibility" --> QE[QueryEngine: Merge-Read]
+  
+  style Index fill:#4caf50,color:#fff
+  style Shards fill:#2196f3,color:#fff
+  style Ops fill:#ff9800,color:#fff
+```
+
 | Component | Responsibility |
 | :--- | :--- |
 | `index.ts` | The central orchestrator and public API surface. |

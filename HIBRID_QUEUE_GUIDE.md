@@ -4,6 +4,37 @@ This guide explores the **Reactive Components** within the BroccoliQ Hive. It co
 
 ---
 
+#### The Two-Systems Orchestrator
+```mermaid
+graph TD
+  subgraph "The Hive Master"
+    Pool[BufferedDbPool]
+  end
+  
+  subgraph "Sovereign Autonomy (Level 3)"
+    Shadows[Agent Shadows]
+    Locker[Locker]
+  end
+  
+  subgraph "Physical Persistence (Level 8)"
+    Shards[ShardState]
+    Ops[Operations]
+  end
+  
+  Pool -- "orchestrates" --> Shadows
+  Pool -- "orchestrates" --> Locker
+  Pool -- "orchestrates" --> Shards
+  Pool -- "orchestrates" --> Ops
+  
+  Shadows -- "commitWork" --> Shards
+  Shards -- "flush" --> Ops
+  Ops -- "WAL Write" --> SQLite[(Physical Disk)]
+  
+  style Shadows fill:#2196f3,color:#fff
+  style Shards fill:#4caf50,color:#fff
+  style SQLite fill:#ff9800,color:#fff
+```
+
 ## 1. The Sharded ShardState Orchestrator
 
 The `ShardState` is the fundamental unit of partition. Every `shardId` has its own isolated memory dual-buffer and indexing logic.
@@ -99,6 +130,27 @@ The `Locker.ts` component provides cross-process mutual exclusion.
 - **Auto-Reclamation**: Locks are heartbeated; if an agent crashes, the `IntegrityWorker` reclaims the lock automatically after the TTL expires.
 
 ---
+
+#### The Completion Pipeline
+```mermaid
+graph LR
+  subgraph "Active Work"
+    J[Active Job] -- "finish" --> S[Success]
+    J -- "throw" --> F[Failure]
+  end
+  
+  subgraph "Hive Updates"
+    S -- "push" --> U1[Update: Done]
+    F -- "push" --> U2[Update: Failed / Retry]
+  end
+  
+  subgraph "Audit"
+    U1 -- "clean" --> IW[IntegrityWorker]
+  end
+  
+  style S fill:#4caf50,color:#fff
+  style F fill:#f44336,color:#fff
+```
 
 ## 📊 Hive-Wide Performance Metrics
 

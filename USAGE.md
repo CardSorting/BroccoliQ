@@ -36,6 +36,17 @@ node index.js
 
 The complexity of Level 10 is hidden behind a simple, authoritative API.
 
+#### Speed-to-Hive Integration
+```mermaid
+graph LR
+  Start[Install] --> Init[Initialize Hive]
+  Init -- "Level 10" --> Push[Push Work]
+  Push --> Process[Hive Processor]
+  
+  style Init fill:#4caf50,color:#fff
+  style Push fill:#2196f3,color:#fff
+```
+
 ```typescript
 import { SqliteQueue } from 'broccoliq';
 

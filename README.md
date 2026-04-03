@@ -11,6 +11,34 @@
 🛡️ **Sovereign Autonomy**: Distributed locking and self-healing for large-scale agent swarms.
 💎 **Level 10 Type Sovereignty**: Professional-grade type safety via Kysely and strict internal hardening.
 
+> [!NOTE]
+> ### Sovereign Architecture at a Glance
+> ```mermaid
+> graph TD
+>   subgraph "Sovereign Hive"
+>     BDP[BufferedDbPool] --> S1[Shard A: Main WAL]
+>     BDP --> S2[Shard B: Telemetry WAL]
+>     BDP --> SN[Shard N: Project WAL]
+>   end
+>   
+>   subgraph "Agent Autonomy Layer"
+>     A1[Agent 1] -- "beginWork()" --> AS1[Agent Shadow 1]
+>     A2[Agent 2] -- "beginWork()" --> AS2[Agent Shadow 2]
+>     AS1 -- "commitWork()" --> BDP
+>     AS2 -- "commitWork()" --> BDP
+>   end
+>   
+>   subgraph "Persistence"
+>     S1 --> D1[(Physical SQLite A)]
+>     S2 --> D2[(Physical SQLite B)]
+>     SN --> DN[(Physical SQLite N)]
+>   end
+> 
+>   style BDP fill:#4caf50,stroke:#333,stroke-width:2px;
+>   style AS1 fill:#2196f3,stroke:#333,stroke-width:2px;
+>   style AS2 fill:#2196f3,stroke:#333,stroke-width:2px;
+> ```
+
 > *"I integrated BroccoliQ and the database bottleneck simply vanished. It feels like direct memory injection, not a database."*
 
 ---

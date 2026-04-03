@@ -9,6 +9,23 @@ This cookbook provides **practical, copy-pasteable code recipes** for solving co
 ### Use Case
 Enqueue items into partitioned shards and process them at scale.
 
+#### Sharded Queue Flow
+```mermaid
+graph LR
+  subgraph "The Hive"
+    A[App] -- "enqueue()" --> S1{Shard Selector}
+    S1 -- "shardId: alpha" --> Q1[SqliteQueue Alpha]
+    S1 -- "shardId: beta" --> Q1[SqliteQueue Beta]
+  end
+  
+  subgraph "Shard Worker"
+    Q1 -- "Level 7" --> W1[Worker Process]
+  end
+  
+  style S1 fill:#4caf50,color:#fff
+  style Q1 fill:#2196f3,color:#fff
+```
+
 ```typescript
 // File: app/queues/sharded-email-queue.ts
 import { SqliteQueue } from '../infrastructure/queue/SqliteQueue.js';
@@ -88,6 +105,23 @@ class MaintenanceHive {
 ### Use Case
 Perform multiple database operations as a single atomic unit without locking the Hive.
 
+#### Agent Shadow Atomic Lifecycle
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant S as Shadow Buffer
+    participant H as Shard Active Buffer
+    
+    A->>S: beginWork()
+    Note over S: Isolated Workspace
+    A->>S: push(op1)
+    A->>S: push(op2)
+    Note over S: Uncommitted State
+    A->>H: commitWork()
+    S->>H: Atomic Batch Inject
+    Note over H: Hive Synchronized
+```
+
 ```typescript
 // File: app/agents/knowledge-agent.ts
 import { BufferedDbPool } from '../infrastructure/db/pool/index.js';
@@ -131,6 +165,21 @@ class KnowledgeAgent {
 
 ### Use Case
 Ingest over 100,000 operations per second using partitioned shards and Level 3 raw SQL.
+
+#### Quantum Burst (Parallel Ingest)
+```mermaid
+graph TD
+  subgraph "Quantum Boost System"
+    B[Burst Data] -- "Parallel Mapping" --> P1[Shard Alpha]
+    B -- "Parallel Mapping" --> P2[Shard Beta]
+    
+    P1 -- "Level 3 Raw SQL" --> D1[(Disk A)]
+    P2 -- "Level 3 Raw SQL" --> D2[(Disk B)]
+  end
+  
+  style P1 fill:#ff9800,color:#fff
+  style P2 fill:#ff9800,color:#fff
+```
 
 ```typescript
 // File: app/ingest/telemetry-burst.ts

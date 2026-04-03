@@ -6,10 +6,40 @@ This guide bridges the gap between "it works" and "Sovereign Architecture." Thes
 
 ## 1. The Architecture Pyramid: 6 Layers of Hardening
 
+### The Architecture Pyramid: 6 Layers of Hardened Sovereignty
+```mermaid
+graph TD
+  L6[Layer 6: Latency Observatory] --> L5[Layer 5: Graceful Shutdown]
+  L5 --> L4[Layer 4: Level 10 Hardening]
+  L4 --> L3[Layer 3: Agent Shadows]
+  L3 --> L2[Layer 2: Sharded Partitioning]
+  L2 --> L1[Layer 1: Domain Abstraction]
+  
+  style L1 fill:#4caf50,color:#fff
+  style L4 fill:#2196f3,color:#fff
+  style L6 fill:#ff9800,color:#fff
+```
+
 Every production-grade Hive deployment must implement these six layers of defense and performance.
 
 ### Layer 1: Domain Abstractions
-Never leak `SqliteQueue` or `BufferedDbPool` types into your business logic. Wrap the Hive in a Domain Service.
+Never leak `SqliteQueue` or `BufferedDbPool` types into your business logic. Wrap the Hive in a Domain Service to maintain **Type Sovereignty**.
+
+#### Domain Service Pattern
+```mermaid
+graph LR
+  subgraph "App Layer"
+    C[Controller] -- "synthesize()" --> DS[KnowledgeHive Service]
+  end
+  
+  subgraph "Hive Architecture"
+    DS -- "internal" --> Q[SqliteQueue]
+    Q -- "partitions" --> S[(SQLite Shards)]
+  end
+  
+  style DS fill:#4caf50,color:#fff
+  style Q fill:#2196f3,color:#fff
+```
 
 ```typescript
 // ✓ GOOD: Sovereign Domain Service

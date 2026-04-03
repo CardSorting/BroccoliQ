@@ -4,6 +4,41 @@ This document explores the **Sovereign Hive Architecture** at 10 levels of depth
 
 ---
 
+## Level 0: The Big Picture (In Plain English)
+
+Before diving into the optimization levels, it is essential to understand the core philosophy of the Hive: **Memory is the Workspace; Disk is the Archive.**
+
+Most databases treat every write as a high-stakes, disk-locked event. BroccoliQ treats every write as an **Instant Memory Injection**. 
+
+### The Sovereign Architecture at a Glance
+```mermaid
+graph TD
+  subgraph "The Hive"
+    DP[BufferedDbPool] -- "partitions" --> S1[Shard 1]
+    DP -- "partitions" --> S2[Shard 2]
+    S1 -- "merges" --> QE[QueryEngine]
+    S2 -- "merges" --> QE
+  end
+  
+  subgraph "The Workspace (RAM)"
+    S1 -- "Active Buffer" --> AB1[Fast IO]
+    S2 -- "Active Buffer" --> AB2[Fast IO]
+  end
+  
+  subgraph "The Archive (Disk)"
+    S1 -- "Flush" --> D1[(SQLite Shard 1)]
+    S2 -- "Flush" --> D2[(SQLite Shard 2)]
+  end
+  
+  Agent[Agent Shadow] -- "Inject" --> AB1
+  QE -- "Deliver" --> Agent
+```
+
+> [!TIP]
+> **Why this matters**: By partitioning across shards and prioritizing memory buffers, we eliminate the "Single-File IO Wall." Your agents never wait for a disk lock; they only wait for the speed of light (or at least, your RAM).
+
+---
+
 ## Level 1: Infinite Horizon Flush Cycles (The Swap)
 
 ### The Philosophy
@@ -83,6 +118,26 @@ Status filtering (e.g., `status = 'pending'`) is often the slowest part of a que
 
 - **O(1) Dispatching**: Workers query the memory index first.
 - **Merge-Query Intelligence**: The `QueryEngine` merges the on-disk database state with the in-memory `ActiveBuffer` and `In-FlightBuffer` in real-time, providing total visibility without the disk latency.
+
+### The QueryEngine Bridge (Level 7)
+```mermaid
+graph TD
+  subgraph "The Hive Query"
+    QE[QueryEngine] -- "Merges" --> R[Unified Result Set]
+  end
+  
+  subgraph "Memory (Instant)"
+    AB[Active Buffer] -- "Latest Data" --> QE
+    IB[In-Flight Buffer] -- "Pending Flush" --> QE
+  end
+  
+  subgraph "Disk (Persistent)"
+    PS[(SQLite Physical Shard)] -- "Committed Data" --> QE
+  end
+  
+  style QE fill:#4caf50,color:#fff
+  style R fill:#2196f3,color:#fff
+```
 
 ---
 
