@@ -6,7 +6,7 @@
  */
 
 // Core queue functionality
-export * from "./db/BufferedDbPool.js";
+export * from "./db/pool/index.js";
 export * from "./db/Config.js";
 export * from "./db/IntegrityWorker.js";
 export * from "./queue/Signaling.js";
