@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
-import { dbPool } from "./BufferedDbPool.js";
+import { dbPool } from "./pool/index.js";
 import { setDbPath } from "./Config.js";
 import { integrityWorker } from "./IntegrityWorker.js";
 
@@ -48,10 +48,12 @@ async function runThroughputBench(count: number, batchSize: number) {
 				environment: "{}",
 			},
 		}));
-		await dbPool.pushBatch(ops);
+		for (const op of ops) {
+			await dbPool.push(op);
+		}
 	}
 
-	await dbPool.flushAll();
+	await dbPool.flush();
 	const duration = performance.now() - start;
 	const throughput = (count / (duration / 1000)).toFixed(2);
 	console.log(`Finished in ${duration.toFixed(2)}ms (${throughput} ops/sec)`);
@@ -85,7 +87,7 @@ async function runShardingBench(count: number, shardCount: number) {
 		});
 	}
 
-	await dbPool.flushAll();
+	await dbPool.flush();
 	const duration = performance.now() - start;
 	const throughput = (count / (duration / 1000)).toFixed(2);
 	console.log(`Finished in ${duration.toFixed(2)}ms (${throughput} ops/sec)`);

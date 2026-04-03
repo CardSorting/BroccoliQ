@@ -882,7 +882,7 @@ Handle shutdown cleanly without losing work
 ```typescript
 // File: app/workers/graceful-shutdown.ts
 import { SqliteQueue } from '../infrastructure/queue/SqliteQueue.js';
-import { dbPool } from '../infrastructure/db/BufferedDbPool.js';
+import { dbPool } from '../infrastructure/db/pool/index.js';
 
 class GracefulWorker {
   private queue = new SqliteQueue<unknown>();
@@ -965,7 +965,7 @@ Monitor queue health and performance
 ```typescript
 // File: app/monitoring/metrics.ts
 import { SqliteQueue } from '../infrastructure/queue/SqliteQueue.js';
-import { dbPool } from '../infrastructure/db/BufferedDbPool.js';
+import { dbPool } from '../infrastructure/db/pool/index.js';
 
 class QueueMetrics {
   private queue = new SqliteQueue<unknown>();
@@ -992,7 +992,7 @@ class QueueMetrics {
       db: {
         buffer: dbMetrics.activeBufferSize,
         inFlight: dbMetrics.inFlightOpsSize,
-        shadows: dbMetrics.activeShadows,
+        shadows: dbMetrics.shadows,
       },
     };
 

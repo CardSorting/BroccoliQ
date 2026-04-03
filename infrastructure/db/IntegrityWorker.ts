@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { logger } from "../util/Logger.js";
-import { dbPool } from "./BufferedDbPool.js";
+import { dbPool } from "./pool/index.js";
 import { getActiveShards, getDb } from "./Config.js";
 
 interface PragmaResult {

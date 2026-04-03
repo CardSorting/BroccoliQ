@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { CompiledQuery, Kysely, SqliteDialect } from "kysely";
 
-const isBun = !!(globalThis as any).Bun;
+const isBun = !!(globalThis as { Bun?: unknown }).Bun;
 
 export interface Schema {
 	users: {
@@ -210,7 +210,7 @@ export interface Schema {
 }
 
 const _dbs = new Map<string, Kysely<Schema>>();
-const _rawDbs = new Map<string, any>();
+const _rawDbs = new Map<string, unknown>();
 let _dbPath: string | null = null;
 const _isInitialized = new Set<string>();
 
@@ -234,8 +234,8 @@ export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
 			? _dbPath
 			: path.join(dbDir, `${path.basename(_dbPath, ".db")}_${shardId}.db`);
 
-	let dialect: any;
-	let rawDb: any;
+	let dialect: import("kysely").Dialect;
+	let rawDb: unknown;
 
 	if (isBun) {
 		// Native Bun Support: O(1) N-API Overhead reduction
@@ -245,7 +245,7 @@ export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
 		const { BunSqliteDialect } = await import("kysely-bun-sqlite");
 		rawDb = new Database(shardPath);
 		dialect = new BunSqliteDialect({
-			database: rawDb,
+			database: rawDb as any,
 		});
 	} else {
 		// Production-grade Node Support
@@ -253,7 +253,7 @@ export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
 		const Database = (await import("better-sqlite3")).default;
 		rawDb = new Database(shardPath);
 		dialect = new SqliteDialect({
-			database: rawDb,
+			database: rawDb as any,
 		});
 	}
 
@@ -274,7 +274,7 @@ export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
 
 export async function getRawDb(
 	shardId: string = "main",
-): Promise<any> {
+): Promise<unknown> {
 	const existing = _rawDbs.get(shardId);
 	if (existing) return existing;
 

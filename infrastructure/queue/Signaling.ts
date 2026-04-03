@@ -22,6 +22,10 @@ export class Signaling {
 	constructor(shardId: string = "signals") {
 		this.queue = new SqliteQueue<string>({ shardId });
 		this.queue.process(async (job) => {
+			if (!job.payload || !job.payload.trim().startsWith("<")) {
+				// Level 1 Defense: Ignore non-XML payloads silently
+				return;
+			}
 			try {
 				const { tag, attributes, content } = XmlLite.parse(job.payload);
 				const signal: Signal<unknown> = {
@@ -35,7 +39,7 @@ export class Signaling {
 					await handler(signal);
 				}
 			} catch (e) {
-				console.error("[Signaling] Failed to parse XML-Lite signal:", e);
+				console.error(`[Signaling] Failed to parse XML-Lite signal (${job.id}):`, e);
 			}
 		});
 	}

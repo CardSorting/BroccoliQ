@@ -1,4 +1,4 @@
-import { dbPool } from "./BufferedDbPool.js";
+import { dbPool } from "./pool/index.js";
 import { setDbPath } from "./Config.js";
 import * as path from "node:path";
 import * as fs from "node:fs";
@@ -47,7 +47,7 @@ async function main() {
 		});
 	}
 
-	await dbPool.flushAll();
+	await dbPool.flush();
 	await dbPool.stop();
 	console.log("KnowledgeBase populated successfully.");
 }

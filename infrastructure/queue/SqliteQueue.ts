@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 import { EventEmitter } from "node:events";
-import { BufferedDbPool, dbPool } from "../db/BufferedDbPool.js";
+import { BufferedDbPool, dbPool } from "../db/pool/index.js";
 
 export interface QueueJob<T> {
 	id: string;
@@ -171,7 +171,9 @@ export class SqliteQueue<T> {
 			};
 		});
 
-		await dbPool.pushBatch(ops);
+		for (const op of ops) {
+			await dbPool.push(op);
+		}
 		this.wakeUpEmitter.emit("enqueue");
 		return ids;
 	}
@@ -225,73 +227,84 @@ export class SqliteQueue<T> {
 
 		const now = Date.now();
 		try {
-			return await dbPool.runTransaction(async (agentId) => {
-				const jobs = await dbPool.selectWhere(
-					"queue_jobs",
-					[
-						{ column: "status", value: "pending" },
-						{ column: "runAt", value: now, operator: "<=" },
-					],
-					agentId,
-					{
-						orderBy: { column: "priority", direction: "desc" },
-						limit: limit * 2, // Fetch extra for pre-filling local buffer
-						shardId: this.shardId,
+		const agentId = crypto.randomUUID();
+		await dbPool.beginWork(agentId);
+		try {
+			const jobs = await dbPool.selectWhere(
+				"queue_jobs",
+				[
+					{ column: "status", value: "pending" },
+					{ column: "runAt", value: now, operator: "<=" },
+				],
+				agentId,
+				{
+					orderBy: { column: "priority", direction: "desc" },
+					limit: limit * 2, // Fetch extra for pre-filling local buffer
+					shardId: this.shardId,
+				},
+			);
+
+			if (jobs.length === 0) {
+				await dbPool.commitWork(agentId);
+				return [];
+			}
+
+			const nowMs = Date.now();
+
+			const mappedJobs = jobs.map((job) => ({
+				...job,
+				payload:
+					typeof job.payload === "string" &&
+					(job.payload.startsWith("{") || job.payload.startsWith("["))
+						? (JSON.parse(job.payload) as T)
+						: (job.payload as T),
+				updatedAt: nowMs,
+				attempts: job.attempts + 1,
+				status: "processing" as const,
+			})) as unknown as QueueJob<T>[];
+
+			// Split into immediate return and local buffer
+			const toBuffer = mappedJobs.slice(limit);
+
+			const allIds = jobs.map((j) => j.id);
+
+			await dbPool.push(
+				{
+					type: "update",
+					table: "queue_jobs",
+					values: {
+						status: "processing",
+						updatedAt: nowMs,
+						attempts: BufferedDbPool.increment(1),
 					},
-				);
+					where: { column: "id", value: allIds, operator: "IN" },
+					layer: "infrastructure",
+					shardId: this.shardId,
+				},
+				agentId,
+			);
 
-				if (jobs.length === 0) return [];
-
-				const nowMs = Date.now();
-
-				const mappedJobs = jobs.map((job) => ({
-					...job,
-					payload:
-						typeof job.payload === "string" &&
-						(job.payload.startsWith("{") || job.payload.startsWith("["))
-							? (JSON.parse(job.payload) as T)
-							: (job.payload as T),
-					updatedAt: nowMs,
-					attempts: job.attempts + 1,
-					status: "processing" as const,
-				})) as unknown as QueueJob<T>[];
-
-				// Split into immediate return and local buffer
-				const toBuffer = mappedJobs.slice(limit);
-
-				const allIds = jobs.map((j) => j.id);
-
-				await dbPool.push(
-					{
-						type: "update",
-						table: "queue_jobs",
-						values: {
-							status: "processing",
-							updatedAt: nowMs,
-							attempts: BufferedDbPool.increment(1),
-						},
-						where: { column: "id", value: allIds, operator: "IN" },
-						layer: "infrastructure",
-						shardId: this.shardId,
-					},
-					agentId,
-				);
-
-				// Fill memory buffer for next call
-				if (toBuffer.length > 0) {
-					for (const job of toBuffer) {
-						if (this.bufferSize() < this.maxMemoryBufferSize - 1) {
-							this.pendingMemoryBuffer[this.bufferTail] = job;
-							this.bufferTail =
-								(this.bufferTail + 1) % this.maxMemoryBufferSize;
-						} else {
-							break;
-						}
+			// Fill memory buffer for next call
+			if (toBuffer.length > 0) {
+				for (const job of toBuffer) {
+					if (this.bufferSize() < this.maxMemoryBufferSize - 1) {
+						this.pendingMemoryBuffer[this.bufferTail] = job;
+						this.bufferTail =
+							(this.bufferTail + 1) % this.maxMemoryBufferSize;
+					} else {
+						break;
 					}
 				}
+			}
 
-				return mappedJobs.slice(0, limit);
-			});
+			await dbPool.commitWork(agentId);
+			return mappedJobs.slice(0, limit);
+		} catch (e) {
+			// Rollback: In write-behind, discard the shadow by expiring it or deleting it.
+			// The modern API lets shadows expire, but we can explicitly commit empty to clear or just let it be.
+			// Actually, for simplicity and safety, we just re-throw.
+			throw e;
+		}
 		} catch (e) {
 			console.error("[SqliteQueue] DequeueBatch failed:", e);
 			return [];
@@ -318,16 +331,16 @@ export class SqliteQueue<T> {
 		if (staleJobs.length === 0) return 0;
 
 		const nowMs = Date.now();
-		await dbPool.pushBatch(
-			staleJobs.map((job) => ({
+		for (const job of staleJobs) {
+			await dbPool.push({
 				type: "update",
 				table: "queue_jobs",
 				values: { status: "pending", updatedAt: nowMs },
 				where: { column: "id", value: job.id },
 				layer: "infrastructure",
 				shardId: this.shardId,
-			})),
-		);
+			});
+		}
 
 		console.warn(`[SqliteQueue] Reclaiming ${staleJobs.length} stale jobs.`);
 		return staleJobs.length;
@@ -418,14 +431,20 @@ export class SqliteQueue<T> {
 		const now = Date.now();
 
 		try {
-			await dbPool.runTransaction(async (agentId) => {
+			const agentId = crypto.randomUUID();
+			await dbPool.beginWork(agentId);
+			try {
 				const lastMaint = await dbPool.selectOne(
 					"queue_settings",
 					{ column: "key", value: "last_maintenance" },
 					agentId,
 					{ shardId: this.shardId },
 				);
-				if (lastMaint && now - Number(lastMaint.value) < 10000) return; // Only once every 10s
+				
+				if (lastMaint && now - Number(lastMaint.value) < 10000) {
+					await dbPool.commitWork(agentId);
+					return;
+				}
 
 				await dbPool.push(
 					{
@@ -455,24 +474,28 @@ export class SqliteQueue<T> {
 						{ column: "updatedAt", value: pruneThreshold, operator: "<" },
 					],
 					agentId,
+					{ shardId: this.shardId },
 				);
 
 				if (oldJobs.length > 0) {
-					await dbPool.pushBatch(
-						oldJobs.map((j) => ({
+					for (const j of oldJobs) {
+						await dbPool.push({
 							type: "delete",
 							table: "queue_jobs",
 							where: { column: "id", value: j.id },
 							layer: "infrastructure",
 							shardId: this.shardId,
-						})),
-						agentId,
-					);
-					console.log(
-						`[SqliteQueue] Pruned ${oldJobs.length} old completed jobs.`,
-					);
+						}, agentId);
+					}
+					console.log(`[SqliteQueue] Pruned ${oldJobs.length} old completed jobs.`);
 				}
-			});
+
+				await dbPool.commitWork(agentId);
+			} catch (e) {
+				// Implicitly discard on error by not committing
+				console.error("[SqliteQueue] Maintenance inner transaction failed:", e);
+				throw e;
+			}
 		} catch (e) {
 			console.error("[SqliteQueue] Maintenance failed:", e);
 		}
@@ -539,7 +562,9 @@ export class SqliteQueue<T> {
 					where: { column: "id", value: id },
 					layer: "infrastructure" as const,
 				}));
-				promises.push(dbPool.pushBatch(ops));
+				for (const op of ops) {
+					await dbPool.push(op);
+				}
 			}
 
 			if (promises.length > 0) {
@@ -730,7 +755,9 @@ export class SqliteQueue<T> {
 					where: { column: "id", value: id },
 					layer: "infrastructure" as const,
 				}));
-				promises.push(dbPool.pushBatch(ops));
+				for (const op of ops) {
+					await dbPool.push(op, undefined);
+				}
 			}
 
 			if (promises.length > 0) {
