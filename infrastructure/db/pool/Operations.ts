@@ -126,28 +126,14 @@ export async function executeBulkInsert(trx: Transaction<Schema>, table: keyof S
 export async function executeSingleOp(trx: Transaction<Schema>, op: WriteOp) {
 	const conditions = normalizeWhere(op.where);
 	if (op.type === "insert" && op.values) {
+		console.log(`[DbPool] ↳ 📝 INSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
 		await trx.insertInto(op.table).values(op.values as never).execute();
 	} else if (op.type === "upsert" && op.values) {
-		// Composite PK Support: branches and tags use (repoPath, name) instead of 'id'
-		const compositePKTables: Record<string, string[]> = {
-			branches: ["repoPath", "name"],
-			tags: ["repoPath", "name"],
-		};
-		
-		const primaryKeyColumns = compositePKTables[op.table as keyof typeof compositePKTables];
-		let query;
-		
-		if (primaryKeyColumns) {
-			// Composite PK upsert
-			query = trx.insertInto(op.table).values(op.values as never).onConflict((oc) => 
-				oc.columns(primaryKeyColumns as never as []).doUpdateSet(op.values as never)
-			);
-		} else {
-			// Standalone id upsert (existing logic)
-			query = trx.insertInto(op.table).values(op.values as never).onConflict((oc) => 
-				oc.column("id" as never).doUpdateSet(op.values as never)
-			);
-		}
+		console.log(`[DbPool] ↳ 🔄 UPSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
+		// Modern Architecture: Standardized on 'id' PRIMARY KEY
+		const query = trx.insertInto(op.table).values(op.values as never).onConflict((oc) => 
+			oc.column("id" as never).doUpdateSet(op.values as never)
+		);
 		await query.execute();
 	} else if (op.type === "update" && op.values) {
 		const sets: Record<string, unknown> = {};

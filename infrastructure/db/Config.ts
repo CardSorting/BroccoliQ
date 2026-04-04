@@ -332,21 +332,21 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS branches (
+    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
     isEphemeral INTEGER DEFAULT 0,
     createdAt BIGINT,
-    expiresAt BIGINT,
-    PRIMARY KEY(repoPath, name)
+    expiresAt BIGINT
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS tags (
+    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
-    createdAt BIGINT,
-    PRIMARY KEY(repoPath, name)
+    createdAt BIGINT
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS nodes (
@@ -364,11 +364,10 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS trees (
+    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
-    id TEXT NOT NULL,
     entries TEXT NOT NULL,
-    createdAt BIGINT,
-    PRIMARY KEY(repoPath, id)
+    createdAt BIGINT
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS files (
@@ -405,13 +404,13 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS claims (
+    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     branch TEXT NOT NULL,
     path TEXT NOT NULL,
     author TEXT NOT NULL,
     timestamp BIGINT NOT NULL,
-    expiresAt BIGINT NOT NULL,
-    PRIMARY KEY(repoPath, branch, path)
+    expiresAt BIGINT NOT NULL
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS telemetry (
@@ -429,12 +428,11 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS telemetry_aggregates (
+    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
-    id TEXT NOT NULL,
     totalCommits INTEGER DEFAULT 0,
     totalTokens INTEGER DEFAULT 0,
-    totalCost REAL DEFAULT 0,
-    PRIMARY KEY(repoPath, id)
+    totalCost REAL DEFAULT 0
   )`);
 
 	// Indices
@@ -504,7 +502,8 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
     value TEXT NOT NULL,
     updatedAt BIGINT NOT NULL
   )`);
@@ -527,11 +526,11 @@ async function initializeSchema(db: Kysely<Schema>) {
 	);
 
 	await execute(`CREATE TABLE IF NOT EXISTS knowledge_edges (
+    id TEXT PRIMARY KEY,
     sourceId TEXT NOT NULL,
     targetId TEXT NOT NULL,
     type TEXT NOT NULL,
     weight REAL DEFAULT 1.0,
-    PRIMARY KEY(sourceId, targetId, type),
     FOREIGN KEY(sourceId) REFERENCES knowledge(id),
     FOREIGN KEY(targetId) REFERENCES knowledge(id)
   )`);
@@ -583,7 +582,8 @@ async function initializeSchema(db: Kysely<Schema>) {
 	);
 
 	await execute(`CREATE TABLE IF NOT EXISTS queue_settings (
-    key TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
     value TEXT,
     updatedAt BIGINT
   )`);
