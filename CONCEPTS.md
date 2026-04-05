@@ -46,6 +46,8 @@ BroccoliQ uses **dual buffers**—two buffers instead of one.
 3. **Flush Phase:** **In-Flight Buffer** writes to disk in the background.
 4. **Repeat:** While one flushes, the other handles new writes.
 
+**Self-Cleaning Shadows:** Any private unit of work (Agent Shadow) that isn't committed within **5 minutes** is automatically discarded by the Hive to prevent memory leaks.
+
 ---
 
 ## Chapter 3: Level 5 - Sovereign Locking (Global Permission)
@@ -108,6 +110,14 @@ graph LR
   P -- "Direct Delivery" --> W[Worker Process]
   
   style P fill:#2196f3,color:#fff
+```
+
+### Flow: The Reactive Lifecycle
+```mermaid
+graph TD
+    Entry[push: update status = 'processing'] --> Delete[Delete from 'status:pending' Map]
+    Delete --> Add[Add to 'status:processing' Map]
+    Add --> Buffer[Add to Active Write Buffer]
 ```
 
 ---

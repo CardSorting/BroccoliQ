@@ -30,7 +30,29 @@ graph LR
   style PS fill:#2196f3,color:#fff
 ```
 
-When you call `push(operation)`, the system injects the data into the **Active Buffer** of the target shard. This is a pure memory operation (0ms latency).
+### The Flush Synchronization Lifecycle
+To ensure zero-downtime, the `BufferedDbPool` uses two independent Mutexes to orchestrate the swap-and-flush cycle.
+
+```mermaid
+sequenceDiagram
+    participant F as Flush Loop (setInterval)
+    participant FM as Flush Mutex
+    participant SM as State Mutex
+    participant S as Shard State
+    participant Ops as Operations Engine
+    
+    F->>FM: acquire()
+    F->>SM: acquire()
+    Note over SM: Protected Swap
+    F->>S: swapToInFlight()
+    Note right of S: Active -> In-Flight, Active = [ ]
+    F->>SM: release()
+    Note over FM: Async I/O Ongoing
+    F->>Ops: executeChunkedRawInsert()
+    Note right of Ops: Disk WAL Journal
+    F->>S: clearInFlight()
+    F->>FM: release()
+```
 
 ---
 
@@ -64,7 +86,39 @@ sequenceDiagram
 
 ---
 
-## Chapter 3: Modular Persistence Architecture
+## Chapter 3: Level 7 - The Triple-Buffer Query Merge
+
+### The Myth: "How do we ensure Read-Your-Writes consistency?"
+
+**Truth:** **The 4-Layer Recursive Merge.**
+
+The `QueryEngine` provides absolute consistency by merging results from progressively more "recent" memory layers before returning them to the agent.
+
+### Sequence: The Merge Priority
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant QE as QueryEngine (L7)
+    participant S as Agent Shadow (L4)
+    participant AB as Active Buffer (L3)
+    participant IB as In-Flight Buffer (L4)
+    participant D as Physical Disk (L2)
+    
+    A->>QE: selectWhere(table, conditions, agentId)
+    QE->>D: Initial query from Disk
+    D-->>QE: Raw results
+    QE->>IB: applyOpsToResults(In-Flight)
+    Note over QE: Merge pending flushes
+    QE->>AB: applyOpsToResults(Active)
+    Note over QE: Merge current memory
+    QE->>S: applyOpsToResults(Shadow)
+    Note over QE: Merge private unit of work
+    QE-->>A: Authoritative Final Result
+```
+
+---
+
+## Chapter 4: Modular Persistence Architecture
 
 To achieve **Level 10 Hardening**, the `BufferedDbPool` is divided into specialized domains:
 
@@ -77,20 +131,37 @@ To achieve **Level 10 Hardening**, the `BufferedDbPool` is divided into speciali
 
 ---
 
-## Chapter 4: Level 7 - Reactive Indexing & Circular Buffers
+## Chapter 5: Level 7 - Reactive Indexing & Circular Buffers
 
-### The Myth: "Does querying 'pending' hit the disk?"
+### The Myth: "How does the memory buffer work?"
 
-**Truth:** **90% of the time, no.**
+**Truth:** **The Pipelined Circular Buffer.**
 
-Each `ShardState` maintains a **Reactive Index** of active buffers. When a worker asks for pending jobs, the `QueryEngine` first scans the Level 7 indexes.
+`SqliteQueue` utilizes a massive in-memory circular buffer to avoid database polling entirely when the Hive is under heavy load.
+
+### Visual: Circular Buffer Pointer Mechanics
+```mermaid
+graph LR
+    subgraph "Pending Job Array (1M Slots)"
+        H((head)) --- J1[Job A]
+        J1 --- J2[Job B]
+        J2 --- J3[Job C]
+        J3 --- T((tail))
+        T --- E[Empty]
+        E --- H
+    end
+    
+    Note left of H: Pop (Dequeue)
+    Note right of T: Push (Enqueue)
+    Note over E: (Tail + 1) % 1M
+```
 
 - **Auth-Index Optimization**: If a query filters by `status` (e.g. `pending`), the engine checks if that status index is "warmed." If so, it uses a **Map Lookup (O(1))** instead of a full buffer scan.
-- **Circular Buffers**: `SqliteQueue` utilizes a massive in-memory circular buffer to avoid database polling entirely when the Hive is under heavy load.
+- **Auto-Filling Memory**: `dequeueBatch` fetches extra jobs (up to `limit * 2`) to fill the local circular buffer, ensuring the next call is 0ms.
 
 ---
 
-## Chapter 5: Level 2 & 4 - Agent Shadow Isolation
+## Chapter 6: Level 2 & 4 - Agent Shadow Isolation
 
 Modern BroccoliQ uses **Agent Shadows** for explicit autonomy:
 
@@ -108,11 +179,11 @@ await dbPool.commitWork(agentId);
 
 **Why Shadows Matter:**
 - **Zero-Contention**: Agents work in private memory space. They only interact with the Hive during the `commitWork` phase.
-- **Atomic Multi-file Operations**: Since the entire shadow is committed as one batch, cross-table integrity is guaranteed.
+- **Shadow Clean-up**: Any uncommitted shadow is automatically expired after 5 minutes by the `cleanupShadows` loop.
 
 ---
 
-## Chapter 6: Level 10 - Axiomatic Type Sovereignty
+## Chapter 7: Level 10 - Axiomatic Type Sovereignty
 
 The v2.1.0 update introduced **Unified Schema Sovereignty**. 
 
@@ -123,3 +194,4 @@ The v2.1.0 update introduced **Unified Schema Sovereignty**.
 ---
 
 **Welcome to the Hive. Welcome to Level 10.**
+**

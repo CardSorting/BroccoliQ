@@ -116,6 +116,9 @@ const queue = new SqliteQueue({
 });
 ```
 
+> [!TIP]
+> **Memory-First Scaling**: `SqliteQueue` maintains an internal **1,000,000 slot** circular buffer. Jobs are enqueued at memory speeds and flushes are pipelined to the shard's WAL journal.
+
 ### The "Warmed" Shard (Extreme Low Latency)
 Pre-load status indexes into RAM to avoid the first-query "disk cold start."
 ```typescript
