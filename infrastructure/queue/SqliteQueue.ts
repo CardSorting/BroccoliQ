@@ -1,10 +1,10 @@
-import * as crypto from "node:crypto";
 import { EventEmitter } from "node:events";
-import { BufferedDbPool, dbPool } from "../db/pool/index.js";
-
 
 // Hardened Infrastructure: Support high-concurrency worker pools
 EventEmitter.defaultMaxListeners = 1000;
+
+import * as crypto from "node:crypto";
+import { BufferedDbPool, dbPool } from "../db/pool/index.js";
 
 
 export interface QueueJob<T> {

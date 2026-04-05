@@ -1,215 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CompiledQuery, Kysely, SqliteDialect } from "kysely";
+import { type Schema } from "./DatabaseSchema.js";
+export type { Schema };
 
 const isBun = !!(globalThis as { Bun?: unknown }).Bun;
 
-export interface Schema {
-	users: {
-		id: string;
-		createdAt: number;
-	};
-	workspaces: {
-		id: string;
-		userId: string;
-		sharedMemoryLayer: string; // JSON array string
-		createdAt: number;
-	};
-	repositories: {
-		id: string;
-		workspaceId: string;
-		repoId: string;
-		repoPath: string;
-		forkedFrom?: string;
-		forkedFromRemote?: string;
-		defaultBranch: string;
-		createdAt: number;
-	};
-	branches: {
-		repoPath: string; // Composite key part: {repoPath}/{name}
-		name: string;
-		head: string;
-		isEphemeral: number; // boolean as 0/1
-		createdAt: number;
-		expiresAt: number | null;
-	};
-	tags: {
-		repoPath: string;
-		name: string;
-		head: string;
-		createdAt: number;
-	};
-	nodes: {
-		id: string;
-		repoPath: string;
-		parentId: string | null;
-		data: string; // JSON string
-		message: string;
-		timestamp: number;
-		author: string;
-		type: "snapshot" | "summary" | "diff";
-		tree: string | null; // JSON string (legacy flat tree)
-		usage: string | null; // JSON string
-		metadata: string | null; // JSON string
-	};
-	trees: {
-		repoPath: string;
-		id: string; // Renamed from hash for consistency
-		entries: string; // JSON string of Record<string, TreeEntry>
-		createdAt: number;
-	};
-	files: {
-		id: string; // CAS hash
-		path: string;
-		content: string;
-		encoding: string;
-		size: number;
-		updatedAt: number;
-		author: string;
-	};
-	reflog: {
-		id: string;
-		repoPath: string;
-		ref: string;
-		oldHead: string | null;
-		newHead: string;
-		author: string;
-		message: string;
-		timestamp: number;
-		operation: string;
-	};
-	stashes: {
-		id: string;
-		repoPath: string;
-		branch: string;
-		nodeId: string;
-		data: string; // JSON string
-		tree: string; // JSON string
-		label: string;
-		createdAt: number;
-	};
-	claims: {
-		repoPath: string;
-		branch: string;
-		path: string; // encoded path
-		author: string;
-		timestamp: number;
-		expiresAt: number;
-	};
-	telemetry: {
-		id: string;
-		repoPath: string;
-		agentId: string;
-		taskId: string | null;
-		promptTokens: number;
-		completionTokens: number;
-		totalTokens: number;
-		modelId: string;
-		cost: number;
-		timestamp: number;
-		environment: string; // JSON string
-	};
-	telemetry_aggregates: {
-		repoPath: string;
-		id: string; // 'global', 'agent_{id}', 'task_{id}'
-		totalCommits: number;
-		totalTokens: number;
-		totalCost: number;
-	};
-	agents: {
-		id: string; // agentId
-		userId: string;
-		name: string;
-		role: string;
-		permissions: string; // JSON string
-		memoryLayer: string; // JSON string
-		createdAt: number;
-		lastActive: number;
-	};
-	knowledge: {
-		id: string; // itemId
-		userId: string;
-		type: string;
-		content: string;
-		tags: string; // JSON string
-		edges: string; // JSON string
-		inboundEdges: string; // JSON string
-		embedding: string | null; // JSON string
-		confidence: number;
-		hubScore: number;
-		expiresAt: number | null;
-		metadata: string; // JSON string
-		createdAt: number;
-	};
-	tasks: {
-		id: string; // taskId
-		userId: string;
-		agentId: string;
-		status: string;
-		description: string;
-		complexity: number;
-		linkedKnowledgeIds: string; // JSON string
-		result: string | null; // JSON string
-		createdAt: number;
-		updatedAt: number;
-	};
-	audit_events: {
-		id: string;
-		userId: string;
-		agentId: string | null;
-		type: string;
-		data: string;
-		createdAt: number;
-	};
-	settings: {
-		id: string;
-		key: string;
-		value: string;
-		updatedAt: number;
-	};
-	logical_constraints: {
-		id: string;
-		repoPath: string;
-		pathPattern: string; // glob pattern
-		knowledgeId: string;
-		severity: "blocking" | "warning";
-		createdAt: number;
-	};
-	knowledge_edges: {
-		sourceId: string;
-		targetId: string;
-		type: string;
-		weight: number;
-	};
-	decisions: {
-		id: string;
-		repoPath: string;
-		agentId: string;
-		taskId: string | null;
-		decision: string;
-		rationale: string;
-		knowledgeIds: string; // JSON array of contributing knowledge
-		timestamp: number;
-	};
-	queue_jobs: {
-		id: string;
-		payload: string;
-		status: "pending" | "processing" | "done" | "failed";
-		priority: number;
-		attempts: number;
-		maxAttempts: number;
-		runAt: number;
-		error: string | null;
-		createdAt: number;
-		updatedAt: number;
-	};
-	queue_settings: {
-		id: string;
-		key: string;
-		value: string;
-		updatedAt: number;
-	};
-}
 
 const _dbs = new Map<string, Kysely<Schema>>();
 const _rawDbs = new Map<string, unknown>();
@@ -601,18 +397,167 @@ async function initializeSchema(db: Kysely<Schema>) {
     updatedAt BIGINT
   )`);
 
-	await execute(
-		`CREATE INDEX IF NOT EXISTS idx_poll_order ON queue_jobs(status, runAt, priority DESC, createdAt ASC)`,
-	);
-	await execute(
-		`CREATE INDEX IF NOT EXISTS idx_cleanup ON queue_jobs(status, updatedAt)`,
-	);
-
-	await execute(`CREATE TABLE IF NOT EXISTS queue_settings (
+	// Level 2: Sovereing Hive Tables (DietCode integration)
+	await execute(`CREATE TABLE IF NOT EXISTS hive_kb (
     id TEXT PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
-    value TEXT,
-    updatedAt BIGINT
+    knowledge_key TEXT NOT NULL,
+    knowledge_value TEXT NOT NULL,
+    type TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    tags TEXT NOT NULL,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_healing_proposals (
+    id TEXT PRIMARY KEY,
+    violation_id TEXT NOT NULL,
+    violation TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    proposed_code TEXT NOT NULL,
+    status TEXT NOT NULL,
+    confidence REAL DEFAULT 1.0,
+    created_at TEXT NOT NULL,
+    applied_at TEXT
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_snapshots (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    hash TEXT NOT NULL,
+    mtime INTEGER
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_file_context (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    state TEXT NOT NULL,
+    source TEXT NOT NULL,
+    last_read_date INTEGER,
+    last_edit_date INTEGER,
+    signature TEXT,
+    external_edit_detected INTEGER DEFAULT 0
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_audit (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    data TEXT,
+    timestamp INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_agent_sessions (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    start_time INTEGER NOT NULL,
+    end_time INTEGER
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_joy_imports (
+    id TEXT PRIMARY KEY,
+    source_path TEXT NOT NULL,
+    imported_path TEXT NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_joy_history (
+    id TEXT PRIMARY KEY,
+    violation_count INTEGER NOT NULL,
+    file_count INTEGER NOT NULL,
+    timestamp INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_metabolic_telemetry (
+    id TEXT PRIMARY KEY,
+    task_id TEXT,
+    reads INTEGER NOT NULL,
+    writes INTEGER NOT NULL,
+    lines_added INTEGER NOT NULL,
+    lines_deleted INTEGER NOT NULL,
+    tokens_processed INTEGER NOT NULL,
+    verifications_success INTEGER NOT NULL,
+    timestamp INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_tasks (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    state TEXT NOT NULL,
+    priority INTEGER NOT NULL,
+    vitals_heartbeat TEXT,
+    v_token TEXT,
+    initial_context TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    started_at INTEGER,
+    completed_at INTEGER,
+    user_agent TEXT NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_llm_telemetry (
+    id TEXT PRIMARY KEY,
+    repo_path TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    task_id TEXT,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    total_tokens INTEGER,
+    model_id TEXT,
+    cost REAL,
+    timestamp INTEGER NOT NULL,
+    environment TEXT
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_joy_metrics (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    violation_count INTEGER NOT NULL,
+    hash TEXT NOT NULL,
+    last_scanned INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_joy_bypasses (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    violation_type TEXT NOT NULL,
+    timestamp INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_locks (
+    id TEXT PRIMARY KEY,
+    resource TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    lock_code TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    acquired_at INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_queue (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    total_shards INTEGER NOT NULL,
+    completed_shards INTEGER DEFAULT 0,
+    metadata TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_job_results (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    shard_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT,
+    error TEXT,
+    priority INTEGER DEFAULT 0,
+    timestamp INTEGER NOT NULL
   )`);
 
 	// Level 2: Self-Healing Column Injection (Legacy Support)
@@ -641,7 +586,29 @@ async function initializeSchema(db: Kysely<Schema>) {
 	await ensureColumn(db, "decisions", "id", "TEXT");
 	await ensureColumn(db, "queue_jobs", "id", "TEXT");
 	await ensureColumn(db, "queue_settings", "id", "TEXT");
-	await ensureColumn(db, "settings", "id", "TEXT");
+
+	// Self-Healing for Hive Tables
+	await ensureColumn(db, "hive_kb", "id", "TEXT");
+	await ensureColumn(db, "hive_healing_proposals", "id", "TEXT");
+	await ensureColumn(db, "hive_snapshots", "id", "TEXT");
+	await ensureColumn(db, "hive_file_context", "id", "TEXT");
+	await ensureColumn(db, "hive_audit", "id", "TEXT");
+	await ensureColumn(db, "hive_agent_sessions", "id", "TEXT");
+	await ensureColumn(db, "hive_joy_imports", "id", "TEXT");
+	await ensureColumn(db, "hive_joy_history", "id", "TEXT");
+	await ensureColumn(db, "hive_metabolic_telemetry", "id", "TEXT");
+	await ensureColumn(db, "hive_tasks", "id", "TEXT");
+	await ensureColumn(db, "hive_llm_telemetry", "id", "TEXT");
+	await ensureColumn(db, "hive_joy_metrics", "id", "TEXT");
+	await ensureColumn(db, "hive_joy_bypasses", "id", "TEXT");
+	await ensureColumn(db, "hive_locks", "id", "TEXT");
+	await ensureColumn(db, "hive_queue", "id", "TEXT");
+	await ensureColumn(db, "hive_job_results", "id", "TEXT");
+
+	// Hive Indices
+	await execute(`CREATE INDEX IF NOT EXISTS idx_hive_telemetry_task ON hive_llm_telemetry (task_id)`);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_hive_metabolic_task ON hive_metabolic_telemetry (task_id)`);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_hive_kb_key ON hive_kb (knowledge_key)`);
 
 	await execute(`CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(userId)`);
 	await execute(

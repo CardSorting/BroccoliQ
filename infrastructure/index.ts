@@ -5,9 +5,12 @@
  * Use direct imports from 'broccoliq' for the primary entry points.
  */
 
-// Core queue functionality
-export * from "./db/pool/index.js";
-export * from "./db/Config.js";
-export * from "./db/IntegrityWorker.js";
-export * from "./queue/Signaling.js";
-export * from "./queue/SqliteQueue.js";
+// Core database and pool functionality
+export { setDbPath, getDb, getRawDb } from "./db/Config.js";
+export { dbPool, BufferedDbPool } from "./db/pool/index.js";
+export { IntegrityWorker } from "./db/IntegrityWorker.js";
+
+// Signaling and Queue functionality
+export { Signaling } from "./queue/Signaling.js";
+export { SqliteQueue } from "./queue/SqliteQueue.js";
+export type { Schema } from "./db/DatabaseSchema.js";
