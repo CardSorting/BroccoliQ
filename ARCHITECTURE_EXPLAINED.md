@@ -4,21 +4,20 @@ This chapter peels back the curtain. No more "does it work" questions—this is 
 
 ---
 
-## Chapter 1: The "Dual Buffer" Persistence Logic
+## Chapter 1: Level 3 & 4 - The Dual Buffer Persistence Logic
 
 ### The Myth: "Does the queue use memory or disk?"
 
 **Truth:** It uses **sharded dual-buffering** to orchestrate both.
 
-The BroccoliQ Sovereign Hive was **architected for the Bun engine's direct SQLite integration**. While it maintains Node.js compatibility, the system's modular `BufferedDbPool` is designed specifically to leverage sharded WAL journals for 1,000,000+ operations per second.
+The BroccoliQ Sovereign Hive is architected specifically for high-throughput sharded WAL journals. While it maintains Node.js compatibility, the system's modular `BufferedDbPool` is designed to leverage multiple independent SQLite files for 1,000,000+ operations per second.
 
-### The "Dual Buffer" Pipeline at a Glance
+### The "Dual Buffer" Pipeline (Level 3 & 4)
 ```mermaid
 graph LR
-  subgraph "Shard Memory State"
+  subgraph "Shard Memory State (Level 3)"
     AB[Active Buffer] -- "Swap" --> IB[In-Flight Buffer]
-    IB -- "Flush" --> PS[Physical Shard]
-    PS -- "Journal" --> IB
+    IB -- "Flush (Level 4)" --> PS[Physical Shard]
   end
   
   W1[Write Operation] -- "push()" --> AB
@@ -33,88 +32,52 @@ graph LR
 
 When you call `push(operation)`, the system injects the data into the **Active Buffer** of the target shard. This is a pure memory operation (0ms latency).
 
-**The Swap & Flush Cycle:**
-1. When a shard's `Active Buffer` hits a threshold (or 1000ms passes), the pool performs an **Atomic Swap**.
-2. The `Active Buffer` becomes the `In-Flight Buffer`.
-3. A new `Active Buffer` is initialized for incoming writes.
-4. The `In-Flight Buffer` is flushed to the physical SQLite shard in a single, high-throughput transaction.
-
 ---
 
-## Chapter 2: Sovereign Sharding (Level 8)
+## Chapter 2: Level 2 & 5 - The Locking Bypass (Direct I/O)
 
-### The Myth: "Is sharding just for large datasets?"
+### The Myth: "Is locking as fast as enqueuing?"
 
-**Truth:** **No.** Sharding is for **IO Bandwidth**.
+**Truth:** **No.** Locking requires **Direct Persistence (Level 2)** for absolute coordination.
 
-Even with WAL mode, a single SQLite file hits a "Wall" due to filesystem lock contention. BroccoliQ bypasses this by partitioning across independent shards.
+Unlike enqueuing, which is buffered at Level 7 for eventual delivery, **Sovereign Locking** bypasses the buffers entirely. It uses direct database execution to ensure that every agent in the swarm has an immediate, authoritative view of resource ownership.
 
-- **Horizontal Scale**: 10 Shards = 10 independent WAL journals = 10x the physical IO bandwidth.
-- **Sovereign Isolation**: Shard `A` can flush while Shard `B` is under heavy lock contention. One project's burst never blocks another's processing.
-- **Shard State Management**: Each shard maintains its own `ShardState` object, tracking local latencies, buffer pressure, and the **Level 7 In-Memory Index**.
+### Sequence: The Locking Bypass
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant P as BufferedDbPool
+    participant L as Locker (Direct I/O)
+    participant S as Shard (Disk)
+    
+    Note over A: Needs "README.md" lock
+    A->>P: acquireLock('README.md')
+    P->>L: Delegate to Locker
+    Note right of L: Bypass L7 Buffers
+    L->>S: DELETE FROM claims WHERE expires < now
+    L->>S: INSERT INTO claims (resource, author)
+    S-->>L: Success (L2 Persistent)
+    L-->>P: Locked
+    P-->>A: Success
+    Note over A: Safe to modify README
+```
 
 ---
 
 ## Chapter 3: Modular Persistence Architecture
 
-### The Myth: "Is the pool a single monolithic file?"
+To achieve **Level 10 Hardening**, the `BufferedDbPool` is divided into specialized domains:
 
-**Truth:** It is a **coordinated multicomponent system**.
-
-We modularized the `BufferedDbPool` to achieve Level 10 hardening. The system is divided into specialized domains:
-
-1.  **ShardState.ts**: Manages the life-cycle of a single partition (buffers, indexes, metrics).
-2.  **Operations.ts**: The execution engine. Handles `Quantum Boost` (Level 3) chunked raw SQL for massive inserts.
-3.  **QueryEngine.ts**: The Level 7 bridge. It merges in-memory buffers with on-disk results in real-time, ensuring `selectWhere` always sees the most recent uncommitted data.
-4.  **Locker.ts**: Orchestrates the Sovereign Locking protocol across shards.
+| Component | Sovereignty Level | Responsibility |
+|-----------|-------------------|----------------|
+| **Locker.ts** | Level 5 (Global) | Cross-process mutual exclusion via Direct I/O. |
+| **ShardState.ts** | Level 8 (Shards) | Life-cycle management of a single partition. |
+| **Operations.ts** | Level 3 & 6 | "Builder's Punch" coalescing and RAW SQL execution. |
+| **QueryEngine.ts** | Level 7 (Memory) | "Auth-Index" reactive querying and result merging. |
 
 ---
 
-## Chapter 4: Agent Shadow Isolation (Modern API)
-
-### The Myth: "Are transactions opaque?"
-
-**Truth:** **No.** Transactions are **explicit Agent Shadows**.
-
-We removed the legacy `runTransaction` shim. Modern BroccoliQ uses **Agent Shadows** for explicit autonomy:
-
-```typescript
-// Explicit Sovereign Autonomy:
-await dbPool.beginWork(agentId);
-
-// All these operations land in the Agent's private Shadow Buffer
-await dbPool.push({ type: 'insert', table: 'knowledge', values: {...} }, agentId);
-await dbPool.push({ type: 'update', table: 'tasks', ... }, agentId);
-
-// Atomic Commit: Move shadow contents to shard buffers
-await dbPool.commitWork(agentId);
-```
-
-### Agent Shadow Lifecycle
-```mermaid
-sequenceDiagram
-    participant A as Agent
-    participant S as Agent Shadow
-    participant H as Sovereign Hive (Shard)
-    
-    A->>S: beginWork(id)
-    Note over S: Isolated Workspace Initialized
-    A->>S: push(op1)
-    A->>S: push(op2)
-    Note over S: Buffer grows independently
-    A->>H: commitWork(id)
-    S->>H: Atomic Batch Inject
-    Note over H: Operations land in Active Buffer
-    H-->>A: Success
-```
-
-**Why Shadows Matter:**
-- **Zero-Contention**: Agents work in private memory space. They only interact with the Hive during the `commitWork` phase.
-- **Atomic Multi-file Operations**: Since the entire shadow is committed as one batch, cross-table integrity is guaranteed without long-running DB locks.
-
----
-
-## Chapter 5: Level 7 In-Memory Indexing
+## Chapter 4: Level 7 - Reactive Indexing & Circular Buffers
 
 ### The Myth: "Does querying 'pending' hit the disk?"
 
@@ -122,26 +85,41 @@ sequenceDiagram
 
 Each `ShardState` maintains a **Reactive Index** of active buffers. When a worker asks for pending jobs, the `QueryEngine` first scans the Level 7 indexes.
 
-- **O(1) Status Filtering**: We use `Map<Status, Set<JobId>>` to provide instantaneous access to work.
-- **Stale Protection**: If the memory index is empty, the engine transparently falls back to the physical shard.
+- **Auth-Index Optimization**: If a query filters by `status` (e.g. `pending`), the engine checks if that status index is "warmed." If so, it uses a **Map Lookup (O(1))** instead of a full buffer scan.
+- **Circular Buffers**: `SqliteQueue` utilizes a massive in-memory circular buffer to avoid database polling entirely when the Hive is under heavy load.
 
 ---
 
-## Chapter 6: Runtime-Agnostic Intelligence
+## Chapter 5: Level 2 & 4 - Agent Shadow Isolation
 
-### The Myth: "Do I need different code for Bun and Node?"
+Modern BroccoliQ uses **Agent Shadows** for explicit autonomy:
 
-**Truth:** **No.** BroccoliQ autodetects the engine at runtime.
+```typescript
+// Explicit Sovereign Autonomy:
+await dbPool.beginWork(agentId);
 
-- **Bun Integration**: Uses `bun:sqlite` for near-zero overhead native access.
-- **Node.js Integration**: Uses `better-sqlite3` for production-grade stability and WAL performance.
+// All these operations land in the Agent's private Shadow Buffer
+await dbPool.push({ type: 'insert', table: 'hive_knowledge', values: {...} }, agentId);
+await dbPool.push({ type: 'update', table: 'hive_tasks', ... }, agentId);
 
-The `Config.ts` layer handles this transparently, providing a unified Kysely-backed interface regardless of the underlying runtime engine.
+// Atomic Commit: Move shadow contents to shard buffers
+await dbPool.commitWork(agentId);
+```
+
+**Why Shadows Matter:**
+- **Zero-Contention**: Agents work in private memory space. They only interact with the Hive during the `commitWork` phase.
+- **Atomic Multi-file Operations**: Since the entire shadow is committed as one batch, cross-table integrity is guaranteed.
 
 ---
 
-## Chapter 7: The Sovereign Manifesto (Level 10)
+## Chapter 6: Level 10 - Axiomatic Type Sovereignty
 
-BroccoliQ isn't just a database layer; it is a **Sovereign Execution Hive**. By prioritizing **CPU Velocity over Disk Contention**, and **Agent Autonomy over Monolithic Locking**, we have eliminated the legacy infrastructure wall.
+The v2.1.0 update introduced **Unified Schema Sovereignty**. 
+
+- **DatabaseSchema.ts**: The single source of truth for the entire Hive.
+- **hive_** prefixing: All core system tables (knowledge, tasks, audit) are now standardized.
+- **Hardened Type Safety**: Every query is type-checked at compile-time against the authoritative schema.
+
+---
 
 **Welcome to the Hive. Welcome to Level 10.**

@@ -6,24 +6,23 @@ This guide is for when you need to squeeze every drop of Sovereign Hive throughp
 
 ## 1. Beyond the Defaults: The Pro-Grade Config
 
-Default settings are optimized for safety. For **100,000+ operations per second**, you must tune the hive parameters.
+Default settings are optimized for general safety. For **1,000,000+ operations per second**, you must tune the hive parameters to minimize GC pressure and maximize IO.
 
 ```typescript
 // Production-Ready Hive Configuration
 const queue = new SqliteQueue({
-  concurrency: 5000,            // Parallel workers (increase for high-latency jobs)
-  batchSize: 10000,             // Level 7 Dequeue batch size
-  visibilityTimeoutMs: 600000,  // 10 minutes (reclaim window)
-  shardId: 'telemetry-alpha',   // Level 8 Horizontal Partition
-  maxMemoryBufferSize: 2000000  // 2M in-memory slots for extreme bursts
+  concurrency: 5000,            // Increase for high-latency async jobs
+  batchSize: 10000,             // Memory-First Dequeue batch size
+  visibilityTimeoutMs: 600000,  // Reclaim window for stale processing
+  shardId: 'telemetry-alpha',   // Horizontal Partition (Shard ID)
 });
 ```
 
 ---
 
-## 2. Micro-Benchmarking: The Level 3 Quantum Boost
+## 2. Micro-Benchmarking: The Builder's Punch (Level 6)
 
-Don't guess. Measure. BroccoliQ includes **Level 3 Quantum Boost** for massive sub-millisecond ingestion.
+Don't guess. Measure. BroccoliQ includes **Increment Merging (Level 6)** for massive sub-millisecond counter updates.
 
 ### Test 1: Single-Shard Ingestion
 ```typescript
@@ -32,19 +31,19 @@ console.time('enqueue');
 for (let i = 0; i < 100000; i++) {
   await queue.enqueue({ task: `p-${i}` });
 }
-console.timeEnd('enqueue'); // ~70-100ms for 100k jobs (Memory-First)
+console.timeEnd('enqueue'); // ~70-100ms for 100k jobs (Level 7 Circular Buffer)
 
-// Quantum Boost (Bulk Ingest)
-// Internally utilizes Level 3 Chunked RAW SQL
-console.time('quantum');
+// Builder's Punch (Bulk Ingest)
+// Internally utilizes Level 3 Flush logic
+console.time('batch');
 await queue.enqueueBatch(Array(100000).fill({ task: 'p' }));
-console.timeEnd('quantum'); // ~6-10ms for 100k jobs
+console.timeEnd('batch'); // ~6-10ms for 100k jobs (Level 6 Merging)
 ```
 
 **Sovereign Results:**
 - **Single Shard**: 150,000+ jobs/sec.
-- **Quantum Boost**: 1.5M+ jobs/sec (pre-allocated parameter buffers).
-- **Multi-Shard**: 1,000,000+ jobs/sec across 4 parallel WAL journals.
+- **Bulk Ingest**: 1.5M+ jobs/sec (pre-allocated parameter buffers).
+- **Multi-Shard**: 1,000,000+ jobs/sec across 4 parallel WAL journals (Level 8).
 
 ---
 
@@ -56,49 +55,76 @@ For workloads that exceed the physical IO wall of a single NVMe drive, use **Sov
 Partition your Hive by domain, project, or tenant to achieve linear scaling.
 
 ```typescript
-// worker.ts
+// signals-worker.ts
 const signals = new SqliteQueue({ shardId: 'signals' });
+
+// commands-worker.ts
 const commands = new SqliteQueue({ shardId: 'commands' });
 
-// Scale signal processing across 10 processes
-signals.process(handler, { concurrency: 1000 });
+// Both shards operate on independent physical .db and .db-wal files.
 ```
-
-**Impact:**
-- **Zero Coordination Overhead**: Each shard uses a dedicated physical SQLite file.
-- **Independent WAL Journals**: Contention in one shard never blocks another.
 
 ---
 
 ## 4. Throughput Optimization: The 3R Rule
 
-### Read (Level 7 Optimization)
-Can data be pre-loaded? Use **Agent Shadows** to fetch context in one trip.
+### Read (Level 7 Reactive Queries)
+Use **Agent Shadows** to fetch context in one trip while maintaining memory consistency.
 ```typescript
 await pool.beginWork(agentId);
-const context = await pool.query('SELECT * FROM global_state'); // Merges memory/disk
-// ... work locally ...
+// selectWhere merges Active/In-Flight buffers with Disk results.
+const context = await pool.selectWhere('hive_knowledge', { 
+  column: 'category', 
+  value: 'active' 
+}, agentId); 
 await pool.commitWork(agentId);
 ```
 
 ### Reduce (Operation Compression)
-The modular `Operations.ts` engine automatically deduplicates upserts within a single flush cycle. If you push 10 updates for the same key, only the latest survives the flush to disk.
+The modular `Operations.ts` engine automatically deduplicates upserts within a single flush cycle. If you push 10 updates for the same key, only the latest survives the Level 4 flush to disk.
 
-### Reorder (Parallel Autonomy)
-Maximize **Agent Autonomy**. Ensure workers spend 99% of their time in their private Shadow workspace, only interacting with the Shard Buffers during atomic delivery.
+### Reorder (Agent Autonomy)
+Maximize **Sovereign Autonomy**. Ensure workers spend 99% of their time in their private **Agent Shadow (Level 2)** workspace, only interacting with the Hive during the `commitWork` phase.
 
 ---
 
-## 5. Advanced Monitoring: The Latency Observatory
-Real-time observation of hive health is critical for Level 10 sovereignty.
+## 5. Table Warming: The Level 7 Cold-Start Cure
+
+By default, the **Reactive Index** is populated as operations flow through the Hive. For extreme low-latency requirements, you can "warm" specific tables and status indexes upon startup.
 
 ```typescript
-setInterval(async () => {
-  const metrics = await queue.getMetrics();
-  // Monitor: Buffer Pressure, active job duration, and shard disk latency.
-  console.log(`[Metrics] Pending: ${metrics.pending} | Shard Latency: ${metrics.p99}ms`);
-}, 10000);
+// Warm up critical job statuses in RAM
+await dbPool.warmupTable('hive_tasks', 'status:pending');
+await dbPool.warmupTable('hive_tasks', 'status:processing');
+```
+
+**Impact**:
+- **0ms First Query**: Bypasses the initial disk scan for the specified status.
+- **Immediate Authority**: The Reactive Index becomes the source of truth instantly.
+
+---
+
+## 6. Advanced Monitoring: The Hive Observatory
+
+Real-time observation of hive health is critical for Level 10 sovereignty.
+
+### Diagnosing Buffer Pressure
+If `activeBufferSize` consistently exceeds 100,000, your shards may be hitting physical IO limits.
+
+```typescript
+setInterval(() => {
+  const metrics = pool.getMetrics();
+  
+  // Level 3-6 Diagnostic:
+  if (metrics.activeBufferSize > 50000) {
+    console.warn(`[Warning] High Buffer Pressure on Shard ${metrics.shardId}`);
+    // Strategy: Increase shard count (Level 8) or decrease flushIntervalMs
+  }
+  
+  console.log(`[Metrics] Active Ops: ${metrics.activeBufferSize} | p99 Flush: ${metrics.latencies.processing.p99}ms`);
+}, 5000);
 ```
 
 ---
+
 **Status**: `Advanced Scaling Hardened` | **Level**: `10` | **Throughput**: `Quantum Ready`

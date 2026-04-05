@@ -16,17 +16,17 @@ You've read the manifesto. Now you're ready to build with BroccoliQ. This guide 
 
 ## 2. Environment Setup (Bun Native)
 
-BroccoliQ is a **Bun-native** infrastructure layer. While it maintained Node.js compatibility for stability, the system is uniquely optimized for the **Bun engine's zero-latency N-API integration**.
+BroccoliQ is a **Bun-native** infrastructure layer. While it maintains Node.js compatibility, the system is uniquely optimized for the **Bun engine's zero-latency N-API integration**.
 
 ### 🔥 High-Performance Bun Setup (Recommended)
 ```bash
-bun add broccoliq
+bun add @noorm/broccoliq
 bun run index.ts
 ```
 
 ### Universal Node.js Setup
 ```bash
-npm install broccoliq better-sqlite3
+npm install @noorm/broccoliq better-sqlite3
 node index.js
 ```
 
@@ -36,110 +36,137 @@ node index.js
 
 The complexity of Level 10 is hidden behind a simple, authoritative API.
 
-#### Speed-to-Hive Integration
-```mermaid
-graph LR
-  Start[Install] --> Init[Initialize Hive]
-  Init -- "Level 10" --> Push[Push Work]
-  Push --> Process[Hive Processor]
-  
-  style Init fill:#4caf50,color:#fff
-  style Push fill:#2196f3,color:#fff
-```
-
 ```typescript
-import { SqliteQueue } from 'broccoliq';
+import { SqliteQueue } from '@noorm/broccoliq';
 
-// Initialize with 100 parallel workers
-const hive = new SqliteQueue({ concurrency: 100 });
+// Initialize with 500 parallel workers
+const hive = new SqliteQueue({ concurrency: 500 });
 
-// 0ms Latency Memory-First Enqueue
+// 0ms Latency: Level 7 Memory-First Enqueue
 await hive.enqueue({ task: 'synthesize_knowledge', priority: 10 });
 
 // Start the Hive Processor
 hive.process(async (job) => {
   console.log(`[Hive] Processing job ${job.id}`);
-}, { concurrency: 100 });
+}, { concurrency: 500, batchSize: 1000 });
 ```
 
 ---
 
-## 4. Scaling Horizontally: Level 8 Sharding
+## 4. API Reference (Axiomatic Cheat Sheet)
 
-When you hit the physical IO limits of a single SQLite file (~50k-70k writes/sec), it's time to **Shard**.
+### `SqliteQueue<T>` (Level 7 & 8)
 
-```typescript
-// Shard your workload by domain or project
-const projectAlpha = new SqliteQueue({ shardId: 'alpha', concurrency: 500 });
-const projectBeta = new SqliteQueue({ shardId: 'beta', concurrency: 500 });
+| Method | Description | Level |
+| :--- | :--- | :--- |
+| `enqueue(payload, options?)` | Push job to queue (0ms latency). | L7 |
+| `enqueueBatch(items)` | Push multiple jobs in a single transaction. | L6 |
+| `process(handler, options?)` | Start high-concurrency individual processing. | L7 |
+| `processBatch(handler, options?)` | Start true batch processing (10x faster). | L7 |
+| `reclaimStaleJobs()` | Recover jobs stuck in 'processing' (Crash recovery). | L9 |
+| `performMaintenance()` | Run physical audits and self-healing. | L9 |
 
-// Each shard creates its own physical WAL journal:
-// ./broccoliq_alpha.db
-// ./broccoliq_beta.db
+### `BufferedDbPool` (Level 3, 4 & 5)
 
-await projectAlpha.enqueue({ type: 'signal' });
-await projectBeta.enqueue({ type: 'signal' });
-```
-
-**Why Shard?**
-- **Independent WAL Journals**: One shard's disk flush never blocks another's memory injection.
-- **Linear Bandwidth Scale**: 10 Shards = 10x the physical IO bandwidth of your NVMe drive.
+| Method | Description | Level |
+| :--- | :--- | :--- |
+| `push(op, agentId?)` | Buffer a write operation (insert/update/delete). | L3 |
+| `beginWork(agentId)` | Initialize an **Agent Shadow** (Isolated workspace). | L2 |
+| `commitWork(agentId)` | Atomic commit of all shadow operations. | L4 |
+| `selectWhere(table, where, agentId?)` | **Reactive Query**: Merges memory + disk results. | L7 |
+| `acquireLock(resource, author)` | Global **Sovereign Lock** (Cross-process). | L5 |
+| `flush()` | Authoritative synchronization of all buffers to disk. | L4 |
 
 ---
 
-## 5. Agent Shadows & Atomic Autonomy
+## 5. Schema Sovereignty (Level 10)
 
-For complex operations that require multi-step integrity, use the underlying **Agent Shadow** primitives.
+The v2.1.0 update introduces the **Axiomatic Master Schema**. All core Hive tables are prefixed with `hive_`.
 
 ```typescript
-import { BufferedDbPool } from 'broccoliq/pool';
+import type { Schema } from '@noorm/broccoliq';
+import { dbPool } from '@noorm/broccoliq';
 
-const pool = new BufferedDbPool();
+// Strongly-typed reactive query
+const tasks = await dbPool.selectWhere('hive_tasks', { 
+  column: 'status', 
+  value: 'pending' 
+});
 
-async function complexTransaction(agentId: string) {
-  // 1. Enter Sovereign Autonomy
-  await pool.beginWork(agentId);
-
-  // 2. Perform various isolated modifications
-  await pool.push({ table: 'state', type: 'update', values: {...} }, agentId);
-  await pool.push({ table: 'audit', type: 'insert', values: {...} }, agentId);
-
-  // 3. Atomic Commit to Shard Buffers
-  await pool.commitWork(agentId);
-}
+// tasks is now typed as Schema['hive_tasks'][]
+console.log(tasks[0]?.id);
 ```
+
+**Common Hive Tables:**
+- `hive_knowledge`: Core context and knowledge nuggets.
+- `hive_tasks`: System-level orchestration and status.
+- `hive_audit`: Physical security and state-change logs.
+- `hive_session`: Agent session metrics and joy caches.
 
 ---
 
 ## 6. Pro-Grade Configuration Patterns
 
-### The "High-Burst" Sink (100k+ ops/sec)
+### The "High-Burst" Sink (1,000,000+ ops/sec)
 ```typescript
 const queue = new SqliteQueue({
   concurrency: 2000,
-  batchSize: 10000,           // Dequeue in large chunks
-  maxMemoryBufferSize: 5M,    // 5 million jobs in RAM
-  shardId: 'ingest-shard-1'
+  batchSize: 10000,           // Dequeue in massive chunks
+  shardId: 'ingest-shard-1'   // Level 8 Sharding
 });
 ```
 
-### The "Steady State" Processor
+### The "Warmed" Shard (Extreme Low Latency)
+Pre-load status indexes into RAM to avoid the first-query "disk cold start."
 ```typescript
-const queue = new SqliteQueue({
-  concurrency: 50,            // Low parallel pressure
-  pollIntervalMs: 100,        // Conservative polling
-  visibilityTimeoutMs: 10m    // Long reclamation window
-});
+await dbPool.warmupTable('hive_tasks', 'status:pending');
 ```
 
 ---
 
-## 7. The Production Checklist
+## 7. Advanced Monitoring & Error Handling
 
-- [ ] **Graceful Shutdown**: Always call `await queue.stop()` to flush in-flight shards.
-- [ ] **Type Hardened**: Payloads are strictly typed (Level 10 Hardening).
-- [ ] **Shard Monitored**: P99 enqueue latency is < 1ms.
-- [ ] **Integrity Audited**: `IntegrityWorker` is active for periodic physical repairs.
+### Monitoring the Hive
+Use `getMetrics()` to observe the physical health and memory pressure of your shards.
+
+```typescript
+const metrics = dbPool.getMetrics();
+
+console.log(`Hive Health:
+- Active Buffer: ${metrics.activeBufferSize} ops
+- Shard Latency: ${metrics.latencies.processing.p99}ms
+- Shadows:       ${metrics.shadowCount} active agents
+`);
+```
+
+### Production-Grade Agent Shadows
+Always use a `try...catch...finally` block with **Agent Shadows** to ensure resources are handled correctly.
+
+```typescript
+const agentId = `worker-${process.pid}`;
+
+try {
+  await dbPool.beginWork(agentId);
+  
+  // High-speed memory operations
+  await dbPool.push({ table: 'hive_tasks', type: 'insert', ... }, agentId);
+  
+  // Atomic delivery to the shard
+  await dbPool.commitWork(agentId);
+} catch (err) {
+  console.error("Agent failed to commit", err);
+}
+```
 
 ---
-**Status**: `Usage Guide Hardened` | **Level**: `10` | **Philosophy**: `Latency is a Choice`
+
+## 8. The Production Checklist
+
+- [ ] **Graceful Shutdown**: Always call `await queue.stop()` or `await dbPool.stop()`.
+- [ ] **Shard Monitored**: Ensure NVMe throughput isn't hitting physical limits.
+- [ ] **Type Checked**: Always use the `Schema` type for total axiomatic safety.
+- [ ] **Integrity Enabled**: `IntegrityWorker` is running in the background.
+
+---
+
+**Status**: `Usage Guide Hardened` | **Level**: `10` | **Recipes**: [`COOKBOOK.md`](COOKBOOK.md)
