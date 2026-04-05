@@ -151,9 +151,8 @@ graph LR
         E --- H
     end
     
-    Note left of H: Pop (Dequeue)
-    Note right of T: Push (Enqueue)
-    Note over E: (Tail + 1) % 1M
+    H --- Deq["<b>Dequeue (Pop)</b>"]
+    T --- Enq["<b>Enqueue (Push)</b>"]
 ```
 
 - **Auth-Index Optimization**: If a query filters by `status` (e.g. `pending`), the engine checks if that status index is "warmed." If so, it uses a **Map Lookup (O(1))** instead of a full buffer scan.
