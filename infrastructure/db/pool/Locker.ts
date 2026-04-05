@@ -22,44 +22,28 @@ export class Locker {
 		const expiresAt = now + ttlMs;
 
 		try {
-			// 1. Clean up expired locks first
-			await sql`DELETE FROM claims WHERE expiresAt < ${now}`.execute(db);
+			// 1. Clean up expired locks first (Direct)
+			await db.deleteFrom("claims" as any).where("expiresAt", "<", now as any).execute();
 
-			// 2. Atomic claim attempt
-			await this.pool.push({
-				type: "insert",
-				table: "claims",
-				values: {
-					path: resource,
-					author,
-					timestamp: now,
-					expiresAt,
-					repoPath: "global",
-					branch: "main",
-				},
-				shardId,
-			});
+			// 2. Atomic claim attempt (Direct I/O - Level 2)
+			// We use direct Kysely here because locking coordination requires 
+			// immediate database state acknowledgement, not buffered Level 7 eventual consistency.
+			await db.insertInto("claims" as any).values({
+				id: Math.random().toString(36).substring(7), // Simple ID
+				path: resource,
+				author,
+				timestamp: now,
+				expiresAt,
+				repoPath: "global",
+				branch: "main",
+			} as any).execute();
 
-			await this.pool.flush();
-
-			// 3. Verify ownership
-			const claim = await this.pool.selectOne(
-				"claims",
-				[
-					{ column: "path", value: resource },
-					{ column: "author", value: author },
-				],
-				undefined,
-				{ shardId },
-			);
-
-			if (claim) {
-				const interval = setInterval(() => this.heartbeatLock(resource, author, shardId, ttlMs), ttlMs / 2);
-				this.activeLocks.set(`${shardId}:${resource}`, { interval, expiresAt });
-				return true;
-			}
-			return false;
-		} catch {
+			// 3. Start Heartbeat
+			const interval = setInterval(() => this.heartbeatLock(resource, author, shardId, ttlMs), ttlMs / 2);
+			this.activeLocks.set(`${shardId}:${resource}`, { interval, expiresAt });
+			return true;
+		} catch (e: any) {
+			// If insert fails due to UNIQUE constraint, someone else has the lock
 			return false;
 		}
 	}
@@ -72,17 +56,20 @@ export class Locker {
 		const nextExpires = now + ttlMs;
 
 		try {
-			await this.pool.push({
-				type: "update",
-				table: "claims",
-				values: { expiresAt: nextExpires, timestamp: now },
-				where: [
-					{ column: "path", value: resource },
-					{ column: "author", value: author },
-				],
-				shardId,
-			});
-			lock.expiresAt = nextExpires;
+			const db = await this.pool.getDb(shardId);
+			const result = await db.updateTable("claims" as any)
+				.set({ expiresAt: nextExpires as any, timestamp: now as any })
+				.where("path", "=", resource)
+				.where("author", "=", author)
+				.executeTakeFirst();
+			
+			if (BigInt(result.numUpdatedRows) === 0n) {
+				// We lost the lock or someone else manually cleaned it up
+				logger.error(`[Locker] Heartbeat failed: Lock lost for ${resource}`);
+				this.releaseLock(resource, author, shardId);
+			} else {
+				lock.expiresAt = nextExpires;
+			}
 		} catch (e) {
 			logger.error(`[Locker] Heartbeat failed for ${resource}`, e);
 		}
@@ -95,16 +82,15 @@ export class Locker {
 			this.activeLocks.delete(`${shardId}:${resource}`);
 		}
 
-		await this.pool.push({
-			type: "delete",
-			table: "claims",
-			where: [
-				{ column: "path", value: resource },
-				{ column: "author", value: author },
-			],
-			shardId,
-		});
-		await this.pool.flush();
+		try {
+			const db = await this.pool.getDb(shardId);
+			await db.deleteFrom("claims" as any)
+				.where("path", "=", resource)
+				.where("author", "=", author)
+				.execute();
+		} catch (e) {
+			logger.error(`[Locker] Release failed for ${resource}`, e);
+		}
 	}
 
 	public destroy() {

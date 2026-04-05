@@ -2,6 +2,11 @@ import * as crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { BufferedDbPool, dbPool } from "../db/pool/index.js";
 
+
+// Hardened Infrastructure: Support high-concurrency worker pools
+EventEmitter.defaultMaxListeners = 1000;
+
+
 export interface QueueJob<T> {
 	id: string;
 	payload: T;
@@ -35,7 +40,7 @@ export interface SqliteQueueOptions {
 export class SqliteQueue<T> {
 	private isProcessing = false;
 	private stopRequested = false;
-	private wakeUpEmitter = new EventEmitter();
+	private wakeUpEmitter = new EventEmitter().setMaxListeners(1000);
 
 	private pendingMemoryBuffer: (QueueJob<T> | null)[] = new Array(1000000).fill(
 		null,
@@ -634,13 +639,18 @@ export class SqliteQueue<T> {
 						// Wait for in-flight jobs to complete
 						await Promise.race(jobPromises);
 					} else {
-						// Nothing in flight, wait for new jobs
-						await Promise.race([
-							new Promise((resolve) => setTimeout(resolve, pollIntervalMs)),
-							new Promise((resolve) =>
-								this.wakeUpEmitter.once("enqueue", resolve),
-							),
-						]);
+						// Level 3: Hardened Wait Logic (Prevents MaxListenersExceededWarning)
+						await new Promise((resolve) => {
+							const onEnqueue = () => {
+								clearTimeout(timeout);
+								resolve(null);
+							};
+							const timeout = setTimeout(() => {
+								this.wakeUpEmitter.removeListener("enqueue", onEnqueue);
+								resolve(null);
+							}, pollIntervalMs);
+							this.wakeUpEmitter.once("enqueue", onEnqueue);
+						});
 					}
 					continue;
 				}
@@ -820,12 +830,18 @@ export class SqliteQueue<T> {
 					if (batchPromises.size > 0) {
 						await Promise.race(batchPromises);
 					} else {
-						await Promise.race([
-							new Promise((resolve) => setTimeout(resolve, pollIntervalMs)),
-							new Promise((resolve) =>
-								this.wakeUpEmitter.once("enqueue", resolve),
-							),
-						]);
+						// Level 3: Hardened Wait Logic (Prevents MaxListenersExceededWarning)
+						await new Promise((resolve) => {
+							const onEnqueue = () => {
+								clearTimeout(timeout);
+								resolve(null);
+							};
+							const timeout = setTimeout(() => {
+								this.wakeUpEmitter.removeListener("enqueue", onEnqueue);
+								resolve(null);
+							}, pollIntervalMs);
+							this.wakeUpEmitter.once("enqueue", onEnqueue);
+						});
 					}
 					continue;
 				}

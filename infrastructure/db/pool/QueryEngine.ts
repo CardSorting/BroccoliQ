@@ -31,7 +31,7 @@ export function applyOpsToResults<T extends keyof Schema>(
 		const idMap = shardIndexMapByTable?.get(table)?.get(indexKey);
 		if (idMap) {
 			for (const op of idMap.values()) {
-				applySingleOp(table, op, target, conditions);
+				applySingleOp(target, op, conditions);
 			}
 			if (isWarmed) {
 				// Authoritative Index: If warmed, we don't need to scan the whole buffer for this status
@@ -42,24 +42,48 @@ export function applyOpsToResults<T extends keyof Schema>(
 
 	// Fallback: Buffer Scan
 	for (const op of tableOps) {
-		applySingleOp(table, op, target, conditions);
+		applySingleOp(target, op, conditions);
 	}
 }
 
-function applySingleOp<T extends keyof Schema>(
-	table: T,
-	op: WriteOp,
+const REGEX_CACHE = new Map<string, RegExp>();
+const MAX_REGEX_CACHE = 1000;
+
+export function applySingleOp<T extends keyof Schema>(
 	target: Schema[T][],
+	op: WriteOp,
 	conditions: WhereCondition[],
 ): void {
 	const opWhere = normalizeWhere(op.where);
-	
+
 	const matchesOp = (row: Record<string, unknown>, conds: WhereCondition[]) => {
 		return conds.every((c) => {
 			const val = row[c.column];
 			const opStr = (c.operator || "=").toUpperCase();
-			if (opStr === "=") return val === c.value;
-			if (opStr === "IN") return Array.isArray(c.value) ? (c.value as unknown[]).includes(val) : val === c.value;
+			if (opStr === "=" || opStr === "IS") return val === c.value;
+			if (opStr === "IS NOT" || opStr === "!=") return val !== c.value;
+			if (opStr === "IN") {
+				if (c.value instanceof Set) return (c.value as Set<unknown>).has(val);
+				if (Array.isArray(c.value)) {
+					const s = new Set(c.value as any[]);
+					(c as any).value = s; // Optimization: Cache the set on the condition itself
+					return s.has(val);
+				}
+				return val === c.value;
+			}
+			if (opStr === ">") return Number(val) > Number(c.value);
+			if (opStr === "<") return Number(val) < Number(c.value);
+			if (opStr === ">=") return Number(val) >= Number(c.value);
+			if (opStr === "<=") return Number(val) <= Number(c.value);
+			if (opStr === "LIKE" && typeof val === "string" && typeof c.value === "string") {
+				let regex = REGEX_CACHE.get(c.value);
+				if (!regex) {
+					if (REGEX_CACHE.size > MAX_REGEX_CACHE) REGEX_CACHE.clear();
+					regex = new RegExp(`^${c.value.replace(/%/g, ".*").replace(/_/g, ".")}$`, "i");
+					REGEX_CACHE.set(c.value, regex);
+				}
+				return regex.test(val);
+			}
 			return false;
 		});
 	};
@@ -72,6 +96,10 @@ function applySingleOp<T extends keyof Schema>(
 	} else if (op.type === "upsert" && op.values) {
 		const pkMatch = (r: Schema[T]) => {
 			const row = r as unknown as Record<string, unknown>;
+			if (op.conflictTarget) {
+				const targets = Array.isArray(op.conflictTarget) ? op.conflictTarget : [op.conflictTarget];
+				return targets.every(col => row[col] !== undefined && (op.values as Record<string, unknown>)[col] !== undefined && row[col] === (op.values as Record<string, unknown>)[col]);
+			}
 			if (opWhere.length > 0) return matchesOp(row, opWhere);
 			return row.id !== undefined && (op.values as Record<string, unknown>).id !== undefined && row.id === (op.values as Record<string, unknown>).id;
 		};

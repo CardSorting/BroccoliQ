@@ -22,7 +22,7 @@ export class BufferedDbPool {
 	private locker = new Locker(this);
 	private flushInterval: NodeJS.Timeout | null = null;
 	private cleanupInterval: NodeJS.Timeout | null = null;
-	private parameterBuffer = new Array(2000);
+	private parameterBuffer = new Array(5000);
 	
 	public static increment(value: number): Increment {
 		return { _type: "increment", value };
@@ -186,24 +186,31 @@ export class BufferedDbPool {
 				const rawDb = await getRawDb(shard.shardId);
 				const ops = Array.from(shard.inFlightBuffer.values()).flat();
 
-				await db.transaction().execute(async (trx) => {
-					const groups = groupOps(ops);
-					for (const group of groups) {
-						const first = group[0];
-						if (!first) continue;
-						if (group.length >= 100 && first.type === "insert") {
-							totalFlushed += await executeChunkedRawInsert(first.table, group, rawDb as never, this.parameterBuffer);
-						} else if (group.length > 1 && first.type === "insert") {
-							totalFlushed += await executeBulkInsert(trx, first.table, group);
-						} else {
-							for (const op of group) {
-								await executeSingleOp(trx, op);
-								totalFlushed++;
+				try {
+					await db.transaction().execute(async (trx) => {
+						const groups = groupOps(ops);
+						for (const group of groups) {
+							const first = group[0];
+							if (!first) continue;
+							if (group.length >= 100 && (first.type === "insert" || first.type === "upsert")) {
+								totalFlushed += await executeChunkedRawInsert(first.table, group, rawDb as never, this.parameterBuffer);
+							} else if (group.length > 1 && (first.type === "insert" || first.type === "upsert")) {
+								totalFlushed += await executeBulkInsert(trx, first.table, group);
+							} else {
+								for (const op of group) {
+									await executeSingleOp(trx, op);
+									totalFlushed++;
+								}
 							}
 						}
-					}
-				});
-				shard.clearInFlight();
+					});
+					shard.clearInFlight();
+				} catch (e) {
+					logger.error(`[DbPool] Atomic flush failed for shard ${shard.shardId}:`, e);
+					// Level 2: Fail-soft - keep in-flight buffer to retry next time
+					// shard.clearInFlight(); // DO NOT CLEAR on error, let it retry
+					throw e; 
+				}
 			}
 
 			const duration = Date.now() - startTime;
@@ -328,10 +335,22 @@ export class BufferedDbPool {
 	}
 
 	public async stop() {
+		logger.info("[DbPool] Powering down Sovereign Infrastructure...");
 		if (this.flushInterval) clearInterval(this.flushInterval);
 		if (this.cleanupInterval) clearInterval(this.cleanupInterval);
-		await this.flush();
+		this.flushInterval = null;
+		this.cleanupInterval = null;
+
+		// Final authoritative flush
+		try {
+			await this.flush();
+			logger.info("[DbPool] Final synchronization successfully committed.");
+		} catch (e) {
+			logger.error("[DbPool] Critical: Final synchronization failed during shutdown.", e);
+		}
+
 		this.locker.destroy();
+		logger.info("[DbPool] Physical resources released. System Offline.");
 	}
 }
 

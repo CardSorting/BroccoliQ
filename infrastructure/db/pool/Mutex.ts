@@ -4,14 +4,26 @@ export class Mutex {
 
 	constructor(public name: string) {}
 
-	async acquire(): Promise<() => void> {
+	async acquire(timeoutMs = 30000): Promise<() => void> {
 		if (!this.locked) {
 			this.locked = true;
 			return () => this.release();
 		}
 
-		return new Promise((resolve) => {
-			this.queue.push(() => resolve(() => this.release()));
+		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				// Remove the resolver from the queue if it's still there
+				const idx = this.queue.indexOf(resolver);
+				if (idx >= 0) this.queue.splice(idx, 1);
+				reject(new Error(`[Mutex] Timeout acquiring lock: ${this.name} after ${timeoutMs}ms`));
+			}, timeoutMs);
+
+			const resolver = () => {
+				clearTimeout(timeout);
+				resolve(() => this.release());
+			};
+
+			this.queue.push(resolver);
 		});
 	}
 

@@ -87,10 +87,20 @@ export async function executeChunkedRawInsert(
 	const CHUNK_SIZE = 100;
 	let totalFlushed = 0;
 
+	const isUpsert = firstOp.type === "upsert";
+	let conflictClause = "";
+	if (isUpsert) {
+		const target = Array.isArray(firstOp.conflictTarget) 
+			? firstOp.conflictTarget.join(",") 
+			: (firstOp.conflictTarget || (["settings", "queue_settings"].includes(table) ? "key" : "id"));
+		const updates = columns.map(col => `${col}=excluded.${col}`).join(",");
+		conflictClause = ` ON CONFLICT(${target}) DO UPDATE SET ${updates}`;
+	}
+
 	for (let i = 0; i < group.length; i += CHUNK_SIZE) {
 		const chunk = group.slice(i, i + CHUNK_SIZE);
 		const placeholders = chunk.map(() => `(${columns.map(() => "?").join(",")})`).join(",");
-		const sqlStr = `INSERT INTO ${table as string} (${columns.join(",")}) VALUES ${placeholders}`;
+		const sqlStr = `INSERT INTO ${table as string} (${columns.join(",")}) VALUES ${placeholders}${conflictClause}`;
 
 		let pIdx = 0;
 		for (const op of chunk) {
@@ -114,10 +124,25 @@ export async function executeBulkInsert(trx: Transaction<Schema>, table: keyof S
 	const columnCount = Object.keys(firstOp.values).length || 1;
 	const CHUNK_SIZE = Math.max(1, Math.floor(5000 / columnCount));
 	let flushed = 0;
+	
+	const isUpsert = firstOp.type === "upsert";
+	const conflictTarget = firstOp.conflictTarget || (["settings", "queue_settings"].includes(table) ? "key" : "id");
+
 	for (let i = 0; i < group.length; i += CHUNK_SIZE) {
 		const chunk = group.slice(i, i + CHUNK_SIZE);
 		const values = chunk.map((op) => op.values).filter((v): v is Record<string, unknown> => v !== undefined);
-		await trx.insertInto(table).values(values as never).execute();
+		
+		let query = trx.insertInto(table).values(values as never);
+		if (isUpsert) {
+			query = query.onConflict((oc) => {
+				let builder = oc;
+				if (Array.isArray(conflictTarget)) builder = builder.columns(conflictTarget as never);
+				else builder = builder.column(conflictTarget as never);
+				return builder.doUpdateSet(values[0] as never);
+			}) as any;
+		}
+		
+		await query.execute();
 		flushed += chunk.length;
 	}
 	return flushed;
@@ -136,7 +161,8 @@ export async function executeSingleOp(trx: Transaction<Schema>, op: WriteOp) {
 			if (Array.isArray(op.conflictTarget)) {
 				builder = builder.columns(op.conflictTarget as never);
 			} else {
-				builder = builder.column((op.conflictTarget || "id") as never);
+				const target = op.conflictTarget || (["settings", "queue_settings"].includes(op.table) ? "key" : "id");
+				builder = builder.column(target as never);
 			}
 			return builder.doUpdateSet(op.values as never);
 		});

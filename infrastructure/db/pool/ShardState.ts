@@ -61,16 +61,38 @@ export class ShardState {
 		this.activeSize = 0;
 	}
 
+	private isProcessingDirty = true;
+	private isEnqueueDirty = true;
+	private sortedProcessing: number[] = [];
+	private sortedEnqueue: number[] = [];
+
 	public recordLatency(target: "processing" | "enqueue", value: number) {
 		const list = target === "processing" ? this.processingLatencies : this.enqueueLatencies;
 		list.push(value);
 		if (list.length > 5000) list.shift();
+		
+		if (target === "processing") this.isProcessingDirty = true;
+		else this.isEnqueueDirty = true;
 	}
 
 	public calculatePercentile(target: "processing" | "enqueue", percentile: number): number {
 		const samples = target === "processing" ? this.processingLatencies : this.enqueueLatencies;
 		if (samples.length === 0) return 0;
-		const sorted = [...samples].sort((a, b) => a - b);
+		
+		let sorted = target === "processing" ? this.sortedProcessing : this.sortedEnqueue;
+		const isDirty = target === "processing" ? this.isProcessingDirty : this.isEnqueueDirty;
+
+		if (isDirty) {
+			sorted = [...samples].sort((a, b) => a - b);
+			if (target === "processing") {
+				this.sortedProcessing = sorted;
+				this.isProcessingDirty = false;
+			} else {
+				this.sortedEnqueue = sorted;
+				this.isEnqueueDirty = false;
+			}
+		}
+
 		const index = Math.ceil((percentile / 100) * sorted.length) - 1;
 		return sorted[index] ?? 0;
 	}

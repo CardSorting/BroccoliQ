@@ -303,6 +303,28 @@ async function applyPragmas(db: Kysely<Schema>) {
 	await execute("PRAGMA threads = 4;");
 }
 
+async function ensureColumn(db: Kysely<Schema>, table: string, column: string, definition: string) {
+	try {
+		const info = await db.executeQuery(CompiledQuery.raw(`PRAGMA table_info(${table})`));
+		const exists = info.rows.some((row: any) => row.name === column);
+		if (!exists) {
+			console.warn(`[DbPool] 🛡️ Self-Healing: Missing column detected. Adding '${column}' to '${table}'...`);
+			await db.executeQuery(CompiledQuery.raw(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`));
+			
+			// Verify again for peace of mind
+			const verify = await db.executeQuery(CompiledQuery.raw(`PRAGMA table_info(${table})`));
+			const nowExists = verify.rows.some((row: any) => row.name === column);
+			if (nowExists) {
+				console.log(`[DbPool] ✅ Column '${column}' successfully injected into '${table}'.`);
+			} else {
+				throw new Error(`Column injection verification failed for ${table}.${column}`);
+			}
+		}
+	} catch (e) {
+		console.error(`[DbPool] ❌ Critical Self-Healing failure for ${table}.${column}:`, e);
+	}
+}
+
 async function initializeSchema(db: Kysely<Schema>) {
 	await applyPragmas(db);
 	const execute = (q: string) => db.executeQuery(CompiledQuery.raw(q));
@@ -340,7 +362,8 @@ async function initializeSchema(db: Kysely<Schema>) {
     head TEXT NOT NULL,
     isEphemeral INTEGER DEFAULT 0,
     createdAt BIGINT,
-    expiresAt BIGINT
+    expiresAt BIGINT,
+    UNIQUE(repoPath, name)
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS tags (
@@ -348,7 +371,8 @@ async function initializeSchema(db: Kysely<Schema>) {
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
-    createdAt BIGINT
+    createdAt BIGINT,
+    UNIQUE(repoPath, name)
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS nodes (
@@ -412,7 +436,8 @@ async function initializeSchema(db: Kysely<Schema>) {
     path TEXT NOT NULL,
     author TEXT NOT NULL,
     timestamp BIGINT NOT NULL,
-    expiresAt BIGINT NOT NULL
+    expiresAt BIGINT NOT NULL,
+    UNIQUE(path)
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS telemetry (
@@ -590,6 +615,34 @@ async function initializeSchema(db: Kysely<Schema>) {
     updatedAt BIGINT
   )`);
 
+	// Level 2: Self-Healing Column Injection (Legacy Support)
+	// Note: We use TEXT instead of TEXT PRIMARY KEY here because SQLite 
+	// does not support adding PRIMARY KEY columns via ALTER TABLE.
+	await ensureColumn(db, "users", "id", "TEXT");
+	await ensureColumn(db, "workspaces", "id", "TEXT");
+	await ensureColumn(db, "repositories", "id", "TEXT");
+	await ensureColumn(db, "branches", "id", "TEXT");
+	await ensureColumn(db, "tags", "id", "TEXT");
+	await ensureColumn(db, "nodes", "id", "TEXT");
+	await ensureColumn(db, "trees", "id", "TEXT");
+	await ensureColumn(db, "files", "id", "TEXT");
+	await ensureColumn(db, "reflog", "id", "TEXT");
+	await ensureColumn(db, "stashes", "id", "TEXT");
+	await ensureColumn(db, "claims", "id", "TEXT");
+	await ensureColumn(db, "telemetry", "id", "TEXT");
+	await ensureColumn(db, "telemetry_aggregates", "id", "TEXT");
+	await ensureColumn(db, "agents", "id", "TEXT");
+	await ensureColumn(db, "knowledge", "id", "TEXT");
+	await ensureColumn(db, "tasks", "id", "TEXT");
+	await ensureColumn(db, "audit_events", "id", "TEXT");
+	await ensureColumn(db, "settings", "id", "TEXT");
+	await ensureColumn(db, "logical_constraints", "id", "TEXT");
+	await ensureColumn(db, "knowledge_edges", "id", "TEXT");
+	await ensureColumn(db, "decisions", "id", "TEXT");
+	await ensureColumn(db, "queue_jobs", "id", "TEXT");
+	await ensureColumn(db, "queue_settings", "id", "TEXT");
+	await ensureColumn(db, "settings", "id", "TEXT");
+
 	await execute(`CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(userId)`);
 	await execute(
 		`CREATE INDEX IF NOT EXISTS idx_knowledge_user ON knowledge(userId)`,
@@ -603,5 +656,6 @@ async function initializeSchema(db: Kysely<Schema>) {
 		`CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agentId)`,
 	);
 
+	console.log("[DbPool] 🏛️ Sovereign Hive Schema baseline established and hardened.");
 	return db;
 }
