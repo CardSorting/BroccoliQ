@@ -456,6 +456,7 @@ export class SqliteQueue<T> {
 							updatedAt: now,
 						},
 						where: { column: "key", value: "last_maintenance" },
+						conflictTarget: "key",
 						layer: "infrastructure",
 						shardId: this.shardId,
 					},

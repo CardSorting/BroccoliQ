@@ -162,6 +162,7 @@ export interface Schema {
 		createdAt: number;
 	};
 	settings: {
+		id: string;
 		key: string;
 		value: string;
 		updatedAt: number;
@@ -203,6 +204,7 @@ export interface Schema {
 		updatedAt: number;
 	};
 	queue_settings: {
+		id: string;
 		key: string;
 		value: string;
 		updatedAt: number;

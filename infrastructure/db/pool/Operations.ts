@@ -130,10 +130,16 @@ export async function executeSingleOp(trx: Transaction<Schema>, op: WriteOp) {
 		await trx.insertInto(op.table).values(op.values as never).execute();
 	} else if (op.type === "upsert" && op.values) {
 		console.log(`[DbPool] ↳ 🔄 UPSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
-		// Modern Architecture: Standardized on 'id' PRIMARY KEY
-		const query = trx.insertInto(op.table).values(op.values as never).onConflict((oc) => 
-			oc.column("id" as never).doUpdateSet(op.values as never)
-		);
+		// Modern Architecture: Support flexible conflict targets (defaulting to 'id')
+		const query = trx.insertInto(op.table).values(op.values as never).onConflict((oc) => {
+			let builder = oc;
+			if (Array.isArray(op.conflictTarget)) {
+				builder = builder.columns(op.conflictTarget as never);
+			} else {
+				builder = builder.column((op.conflictTarget || "id") as never);
+			}
+			return builder.doUpdateSet(op.values as never);
+		});
 		await query.execute();
 	} else if (op.type === "update" && op.values) {
 		const sets: Record<string, unknown> = {};
