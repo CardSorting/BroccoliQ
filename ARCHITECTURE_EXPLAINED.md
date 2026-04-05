@@ -86,7 +86,36 @@ sequenceDiagram
 
 ---
 
-## Chapter 3: Level 7 - The Triple-Buffer Query Merge
+## Chapter 3: Level 5 & 8 - The Locking Heartbeat Lifecycle
+
+BroccoliDB uses **heartbeats** to maintain possession of a lock. This ensures that if an agent crashes, the lock is automatically released after the TTL expires.
+
+### Sequence: Heartbeat & Expiration
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant L as Locker
+    participant D as Shard Disk
+    participant T as Timer (TTL/2)
+    
+    A->>L: acquireLock(resource, author, ttl)
+    L->>D: DELETE FROM claims WHERE expiresAt < now
+    L->>D: INSERT INTO claims (values)
+    D-->>L: OK
+    Note over L: Start Heartbeat Loop
+    T-->>L: Heartbeat Trigger
+    L->>D: UPDATE claims SET expiresAt = now + ttl
+    Note over A,D: Lock possessed autonomously
+    A->>L: releaseLock()
+    L->>T: clearInterval()
+    L->>D: DELETE FROM claims WHERE path = resource
+    D-->>L: OK
+    L-->>A: Success
+```
+
+---
+
+## Chapter 4: Level 7 - The Triple-Buffer Query Merge
 
 ### The Myth: "How do we ensure Read-Your-Writes consistency?"
 
@@ -118,26 +147,60 @@ sequenceDiagram
 
 ---
 
-## Chapter 4: Modular Persistence Architecture
+## Chapter 5: Level 7 - Auth-Index Decision Logic
 
-To achieve **Level 10 Hardening**, the `BufferedDbPool` is divided into specialized domains:
+### The Myth: "Does it always scan the buffer?"
 
-| Component | Sovereignty Level | Responsibility |
-|-----------|-------------------|----------------|
-| **Locker.ts** | Level 5 (Global) | Cross-process mutual exclusion via Direct I/O. |
-| **ShardState.ts** | Level 8 (Shards) | Life-cycle management of a single partition. |
-| **Operations.ts** | Level 3 & 6 | "Builder's Punch" coalescing and RAW SQL execution. |
-| **QueryEngine.ts** | Level 7 (Memory) | "Auth-Index" reactive querying and result merging. |
+**Truth:** **No.** If a table was "warmed," the engine skips the scan entirely for status-filtered queries.
+
+The `QueryEngine` uses **authoritative indices** to provide O(1) status filtering. This logic branch determines whether we can bypass the high-cost buffer scan.
+
+### Flow: Auth-Index Logic Branch
+```mermaid
+graph TD
+    Start[selectWhere Query] --> Filter{Filter by Status?}
+    Filter -- No --> Scan[Scan Full Op Buffer]
+    Filter -- Yes --> CheckWarm{Index Warmed?}
+    CheckWarm -- No --> Scan
+    CheckWarm -- Yes --> MapLookup[Authoritative Map Lookup]
+    MapLookup --> Return[Return Merged Results]
+    Scan --> Return
+```
 
 ---
 
-## Chapter 5: Level 7 - Reactive Indexing & Circular Buffers
+## Chapter 6: Level 9 - Autonomous Integrity Lifecycle 🛡️
 
-### The Myth: "How does the memory buffer work?"
+### The Myth: "What happens if a shard corrupts?"
 
-**Truth:** **The Pipelined Circular Buffer.**
+**Truth:** **The Hive heals itself.**
 
-`SqliteQueue` utilizes a massive in-memory circular buffer to avoid database polling entirely when the Hive is under heavy load.
+The `IntegrityWorker` is a background assistant that continuously audits every shard for physical and logical consistency.
+
+### Logic: The Self-Healing Audit Loop
+```mermaid
+graph TD
+    Audit[runAudit Loop] --> Shard[Select Active Shard]
+    Shard --> Physical{PRAGMA Check}
+    Physical -- Fail --> Alert[Log Critical Corruption]
+    Physical -- Pass --> Logical[Dangling Nodes Check]
+    Logical -- Orphans Found --> Repair[Auto-Repair Parent Links]
+    Logical -- Pass --> Prune[Prune Telemetry > 7 Days]
+    Prune --> Maint{Frag > 30%?}
+    Maint -- Yes --> Polish[REINDEX & VACUUM]
+    Maint -- No --> Done[Finish Shard Audit]
+    Repair --> Prune
+```
+
+---
+
+## Chapter 7: Level 7 - Pipelined Circular Buffers
+
+### The Myth: "How does the memory buffer stay full?"
+
+**Truth:** **Pipelined Dequeuing.**
+
+`SqliteQueue` doesn't just fetch what you ask for. It proactively fetches **up to 2x the requested batch size** to pre-fill the local circular buffer.
 
 ### Visual: Circular Buffer Pointer Mechanics
 ```mermaid
@@ -155,25 +218,60 @@ graph LR
     T --- Enq["<b>Enqueue (Push)</b>"]
 ```
 
-- **Auth-Index Optimization**: If a query filters by `status` (e.g. `pending`), the engine checks if that status index is "warmed." If so, it uses a **Map Lookup (O(1))** instead of a full buffer scan.
-- **Auto-Filling Memory**: `dequeueBatch` fetches extra jobs (up to `limit * 2`) to fill the local circular buffer, ensuring the next call is 0ms.
+---
+
+## Chapter 8: Level 3 & 7 - The Wake-Up Pipeline
+
+To avoid database polling (which kills performance), BroccoliQ uses an `EventEmitter` to wake up worker threads only when there is actually work to do.
+
+### Flow: Wake-Up Signal Pipeline
+```mermaid
+graph LR
+    P[push Job] --> E[wakeUpEmitter.emit]
+    E --> RW[runWorker Wait Loop]
+    RW -- resolve --> JB[dequeueBatch]
+    JB -- Process --> PD[process Job]
+    
+    subgraph "The Sleep State"
+        RW --- T[setTimeout: poll fallback]
+    end
+```
 
 ---
 
-## Chapter 6: Level 2 & 4 - Agent Shadow Isolation
+## Chapter 9: Modular Persistence Architecture
 
-Modern BroccoliQ uses **Agent Shadows** for explicit autonomy:
+To achieve **Level 10 Hardening**, the `BufferedDbPool` is divided into specialized domains:
 
-```typescript
-// Explicit Sovereign Autonomy:
-await dbPool.beginWork(agentId);
+| Component | Sovereignty Level | Responsibility |
+|-----------|-------------------|----------------|
+| **Locker.ts** | Level 5 (Global) | Cross-process mutual exclusion via Direct I/O. |
+| **ShardState.ts** | Level 8 (Shards) | Life-cycle management of a single partition. |
+| **Operations.ts** | Level 3 & 6 | "Builder's Punch" coalescing and RAW SQL execution. |
+| **QueryEngine.ts** | Level 7 (Memory) | "Auth-Index" reactive querying and result merging. |
 
-// All these operations land in the Agent's private Shadow Buffer
-await dbPool.push({ type: 'insert', table: 'hive_knowledge', values: {...} }, agentId);
-await dbPool.push({ type: 'update', table: 'hive_tasks', ... }, agentId);
+---
 
-// Atomic Commit: Move shadow contents to shard buffers
-await dbPool.commitWork(agentId);
+## Chapter 10: Level 2 & 4 - Agent Shadow Isolation
+
+Modern BroccoliQ uses **Agent Shadows** for explicit autonomy. These shadows allow agents to perform multiple operations that are only visible to the rest of the Hive once they are **Committed**.
+
+### Sequence: Atomic Shadow Commit
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant S as Agent Shadows (Map)
+    participant B as Shard Buffer (Active)
+    participant M as State Mutex
+    
+    A->>S: push(op, agentId)
+    Note over S: Op stored in private memory
+    A->>M: acquire() (commitWork)
+    M->>S: getOps(agentId)
+    S-->>S: delete(agentId)
+    S->>B: spliceOpsInPlace(ops)
+    M-->>A: release()
+    Note over B: Atomically delivered to Hive
 ```
 
 **Why Shadows Matter:**
@@ -182,7 +280,7 @@ await dbPool.commitWork(agentId);
 
 ---
 
-## Chapter 7: Level 10 - Axiomatic Type Sovereignty
+## Chapter 11: Level 10 - Axiomatic Type Sovereignty
 
 The v2.1.0 update introduced **Unified Schema Sovereignty**. 
 
@@ -193,4 +291,3 @@ The v2.1.0 update introduced **Unified Schema Sovereignty**.
 ---
 
 **Welcome to the Hive. Welcome to Level 10.**
-**

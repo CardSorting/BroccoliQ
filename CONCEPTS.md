@@ -32,6 +32,24 @@ BroccoliQ supports **Sharding**—splitting the database into multiple independe
 2. **Route:** Give 10,000 people Ticket A (Shard A) and 10,000 people Ticket B (Shard B).
 3. **Parallelism:** All 10 doors operate at the same time.
 
+### Visual: Shard Routing Topology
+```mermaid
+graph TD
+    Client[dbPool.push] -- "shardId: 'alpha'" --> S1[ShardState Alpha]
+    Client -- "shardId: 'beta'" --> S2[ShardState Beta]
+    Client -- "shardId: 'main'" --> S3[ShardState Main]
+    
+    subgraph "Sovereign Shards (Level 8)"
+        S1 --> F1[(alpha.db)]
+        S2 --> F2[(beta.db)]
+        S3 --> F3[(main.db)]
+    end
+    
+    F1 --- W1[WAL Journal A]
+    F2 --- W2[WAL Journal B]
+    F3 --- W3[WAL Journal Main]
+```
+
 ---
 
 ## Chapter 2: Level 3 & 4 - The Dual Buffer Pipeline
@@ -72,18 +90,21 @@ You're counting apples. 1,000 people shouting "plus one!" results in 1,000 indiv
 ### The Solution: Builder's Punch
 BroccoliQ merges consecutive increments. Instead of 1,000 transactions for +1, it does **one transaction for +1000**.
 
-### Visual: Operation Coalescing
+### Visual: The "Punch" Coalescing Lifecycle
 ```mermaid
-graph TD
-  subgraph "In-Memory Merging (Level 6)"
-    Op1[Update: count +1] -- "groupOps()" --> M[Merged Op: count +3]
-    Op2[Update: count +1] -- "groupOps()" --> M
-    Op3[Update: count +1] -- "groupOps()" --> M
-  end
-  
-  M -- "Single Transaction" --> DB[(SQLite Disk)]
-  
-  style M fill:#4caf50,color:#fff
+sequenceDiagram
+    participant S as Shard Buffer
+    participant O as groupOps Engine
+    participant D as Physical Disk
+    
+    Note over S: 1,000 Update(id:1, +1) Ops
+    S->>O: Send ops for coalescing
+    Note over O: Building Update Cache
+    O-->>O: Merge(id:1, value +1, value +1) -> value +2
+    Note over O: Coalesced 1,000 ops into 1 op
+    O->>D: executeSingleOp(Update id:1, value +1000)
+    D-->>O: Transaction Success
+    O-->>S: Ops Flushed
 ```
 
 ---
@@ -124,7 +145,7 @@ graph TD
 
 ## Chapter 6: Level 9 - Autonomous Integrity (Self-Healing)
 
-### The Solution: The Invisible Assistant
+### The Problem: The Invisible Assistant
 BroccoliDB has an **Autonomous Integrity Worker**—a background assistant that never sleeps.
 1. **Physical Audit:** Check every file for damage or corruption.
 2. **Logical Repair:** Reclaim orphaned jobs from crashed agents.
@@ -134,7 +155,7 @@ BroccoliDB has an **Autonomous Integrity Worker**—a background assistant that 
 
 ## Chapter 7: Level 10 - Axiomatic Type Sovereignty
 
-### The Solution: The Foolproof Blueprint
+### The Problem: The Foolproof Blueprint
 v2.1.0 introduces **Unified Schema Sovereignty**.
 1. **Unified Schema:** One master `Schema` interface in `DatabaseSchema.ts`.
 2. **Hardened Types:** Every query is type-checked against the 16 `hive_` tables.
@@ -149,4 +170,3 @@ v2.1.0 introduces **Unified Schema Sovereignty**.
 3. **ARCHITECTURE_EXPLAINED.md** → The deep technical math.
 
 **BroccoliDB: Your infrastructure should be as smart as your agents.**
-t as your agents.**
