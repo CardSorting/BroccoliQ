@@ -397,6 +397,13 @@ async function initializeSchema(db: Kysely<Schema>) {
     updatedAt BIGINT
   )`);
 
+	await execute(`CREATE TABLE IF NOT EXISTS queue_settings (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updatedAt BIGINT NOT NULL
+  )`);
+
 	// Level 2: Sovereing Hive Tables (DietCode integration)
 	await execute(`CREATE TABLE IF NOT EXISTS hive_kb (
     id TEXT PRIMARY KEY,
@@ -444,6 +451,8 @@ async function initializeSchema(db: Kysely<Schema>) {
 	await execute(`CREATE TABLE IF NOT EXISTS hive_audit (
     id TEXT PRIMARY KEY,
     session_id TEXT,
+    user_id TEXT,
+    agent_id TEXT,
     type TEXT NOT NULL,
     message TEXT NOT NULL,
     data TEXT,
@@ -486,13 +495,17 @@ async function initializeSchema(db: Kysely<Schema>) {
 	await execute(`CREATE TABLE IF NOT EXISTS hive_tasks (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL UNIQUE,
+    user_id TEXT,
+    agent_id TEXT,
     title TEXT NOT NULL,
     objective TEXT NOT NULL,
-    state TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL,
     priority INTEGER NOT NULL,
     vitals_heartbeat TEXT,
     v_token TEXT,
     initial_context TEXT,
+    result TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     started_at INTEGER,
@@ -557,6 +570,13 @@ async function initializeSchema(db: Kysely<Schema>) {
     payload TEXT,
     error TEXT,
     priority INTEGER DEFAULT 0,
+    timestamp INTEGER NOT NULL
+  )`);
+
+	await execute(`CREATE TABLE IF NOT EXISTS hive_scoring_cache (
+    id TEXT PRIMARY KEY,
+    hash TEXT NOT NULL UNIQUE,
+    result TEXT NOT NULL,
     timestamp INTEGER NOT NULL
   )`);
 
