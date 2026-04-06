@@ -9,6 +9,7 @@ const isBun = !!(globalThis as { Bun?: unknown }).Bun;
 
 const _dbs = new Map<string, Kysely<Schema>>();
 const _rawDbs = new Map<string, unknown>();
+const _initPromises = new Map<string, Promise<Kysely<Schema>>>();
 let _dbPath: string | null = null;
 const _isInitialized = new Set<string>();
 
@@ -20,54 +21,63 @@ export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
 	const existing = _dbs.get(shardId);
 	if (existing) return existing;
 
-	if (!_dbPath) {
-		_dbPath = path.resolve(process.cwd(), "broccoliq.db");
+	// Level 10: Atomic Initialization Lock (Prevents Schema Race Conditions)
+	let initPromise = _initPromises.get(shardId);
+	if (!initPromise) {
+		initPromise = (async () => {
+			if (!_dbPath) {
+				_dbPath = path.resolve(process.cwd(), "broccoliq.db");
+			}
+
+			const dbDir = path.dirname(_dbPath);
+			if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
+			const shardPath =
+				shardId === "main"
+					? _dbPath
+					: path.join(dbDir, `${path.basename(_dbPath, ".db")}_${shardId}.db`);
+
+			let dialect: import("kysely").Dialect;
+			let rawDb: unknown;
+
+			if (isBun) {
+				// Native Bun Support: O(1) N-API Overhead reduction
+				// @ts-ignore
+				const { Database } = await import("bun:sqlite");
+				// @ts-ignore
+				const { BunSqliteDialect } = await import("kysely-bun-sqlite");
+				rawDb = new Database(shardPath);
+				dialect = new BunSqliteDialect({
+					database: rawDb as any,
+				});
+			} else {
+				// Production-grade Node Support
+				// @ts-ignore
+				const Database = (await import("better-sqlite3")).default;
+				rawDb = new Database(shardPath);
+				dialect = new SqliteDialect({
+					database: rawDb as any,
+				});
+			}
+
+			const db = new Kysely<Schema>({
+				dialect,
+			});
+
+			_rawDbs.set(shardId, rawDb);
+			_dbs.set(shardId, db);
+
+			if (!_isInitialized.has(shardId)) {
+				await initializeSchema(db);
+				_isInitialized.add(shardId);
+			}
+
+			return db;
+		})();
+		_initPromises.set(shardId, initPromise);
 	}
 
-	const dbDir = path.dirname(_dbPath);
-	if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-
-	const shardPath =
-		shardId === "main"
-			? _dbPath
-			: path.join(dbDir, `${path.basename(_dbPath, ".db")}_${shardId}.db`);
-
-	let dialect: import("kysely").Dialect;
-	let rawDb: unknown;
-
-	if (isBun) {
-		// Native Bun Support: O(1) N-API Overhead reduction
-		// @ts-ignore
-		const { Database } = await import("bun:sqlite");
-		// @ts-ignore
-		const { BunSqliteDialect } = await import("kysely-bun-sqlite");
-		rawDb = new Database(shardPath);
-		dialect = new BunSqliteDialect({
-			database: rawDb as any,
-		});
-	} else {
-		// Production-grade Node Support
-		// @ts-ignore
-		const Database = (await import("better-sqlite3")).default;
-		rawDb = new Database(shardPath);
-		dialect = new SqliteDialect({
-			database: rawDb as any,
-		});
-	}
-
-	const db = new Kysely<Schema>({
-		dialect,
-	});
-
-	_rawDbs.set(shardId, rawDb);
-	_dbs.set(shardId, db);
-
-	if (!_isInitialized.has(shardId)) {
-		await initializeSchema(db);
-		_isInitialized.add(shardId);
-	}
-
-	return db;
+	return initPromise;
 }
 
 export async function getRawDb(
@@ -399,7 +409,7 @@ async function initializeSchema(db: Kysely<Schema>) {
 
 	await execute(`CREATE TABLE IF NOT EXISTS queue_settings (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
+    key TEXT NOT NULL UNIQUE,
     value TEXT NOT NULL,
     updatedAt BIGINT NOT NULL
   )`);
@@ -439,7 +449,7 @@ async function initializeSchema(db: Kysely<Schema>) {
 
 	await execute(`CREATE TABLE IF NOT EXISTS hive_file_context (
     id TEXT PRIMARY KEY,
-    path TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
     state TEXT NOT NULL,
     source TEXT NOT NULL,
     last_read_date INTEGER,
@@ -537,7 +547,7 @@ async function initializeSchema(db: Kysely<Schema>) {
 
 	await execute(`CREATE TABLE IF NOT EXISTS hive_joy_bypasses (
     id TEXT PRIMARY KEY,
-    path TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
     violation_type TEXT NOT NULL,
     timestamp INTEGER NOT NULL
   )`);

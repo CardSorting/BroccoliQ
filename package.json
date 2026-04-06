@@ -1,6 +1,6 @@
 {
   "name": "@noorm/broccoliq",
-  "version": "2.1.0",
+  "version": "2.2.5",
   "type": "module",
   "private": false,
   "description": "BroccoliQ - Sharded Sovereign Hive Architecture (Level 10 Persistence)",
@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
-    "kysely": "^0.27.2",
+    "kysely": "^0.28.2",
     "kysely-bun-sqlite": "^0.4.0"
   },
   "devDependencies": {

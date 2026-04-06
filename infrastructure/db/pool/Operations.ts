@@ -91,16 +91,16 @@ export async function executeChunkedRawInsert(
 	let conflictClause = "";
 	if (isUpsert) {
 		const target = Array.isArray(firstOp.conflictTarget) 
-			? firstOp.conflictTarget.join(",") 
-			: (firstOp.conflictTarget || (["settings", "queue_settings"].includes(table) ? "key" : "id"));
-		const updates = columns.map(col => `${col}=excluded.${col}`).join(",");
+			? firstOp.conflictTarget.map(t => `"${t}"`).join(",") 
+			: `"${firstOp.conflictTarget || (["settings", "queue_settings"].includes(table) ? "key" : "id")}"`;
+		const updates = columns.map(col => `"${col}"=excluded."${col}"`).join(",");
 		conflictClause = ` ON CONFLICT(${target}) DO UPDATE SET ${updates}`;
 	}
 
 	for (let i = 0; i < group.length; i += CHUNK_SIZE) {
 		const chunk = group.slice(i, i + CHUNK_SIZE);
 		const placeholders = chunk.map(() => `(${columns.map(() => "?").join(",")})`).join(",");
-		const sqlStr = `INSERT INTO ${table as string} (${columns.join(",")}) VALUES ${placeholders}${conflictClause}`;
+		const sqlStr = `INSERT INTO "${table as string}" (${columns.map(c => `"${c}"`).join(",")}) VALUES ${placeholders}${conflictClause}`;
 
 		let pIdx = 0;
 		for (const op of chunk) {
