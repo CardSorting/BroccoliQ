@@ -135,7 +135,24 @@ async function initializeSchema(db: Kysely<Schema>) {
 	await applyPragmas(db);
 	const execute = (q: string) => db.executeQuery(CompiledQuery.raw(q));
 
+	// Level 2: Self-Healing Column Migration (Legacy Support)
+	try {
+		for (const table of ["settings", "queue_settings"]) {
+			const info = await db.executeQuery(CompiledQuery.raw(`PRAGMA table_info(${table})`));
+			const hasName = info.rows.some((row: any) => row.name === "name");
+			const hasKey = info.rows.some((row: any) => row.name === "key");
+			if (hasName && !hasKey) {
+				console.warn(`[DbPool] 🛡️ Self-Healing: Migrating column 'name' to 'key' in '${table}'...`);
+				await db.executeQuery(CompiledQuery.raw(`ALTER TABLE ${table} RENAME COLUMN name TO key`));
+				console.log(`[DbPool] ✅ Column 'name' successfully renamed to 'key' in '${table}'.`);
+			}
+		}
+	} catch (e) {
+		console.warn("[DbPool] Self-healing migration skipped or failed:", e);
+	}
+
 	// Schema Initialization
+
 	await execute(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     createdAt BIGINT
