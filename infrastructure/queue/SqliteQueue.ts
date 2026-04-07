@@ -456,6 +456,7 @@ export class SqliteQueue<T> {
 						type: "upsert",
 						table: "queue_settings",
 						values: {
+							id: "last_maintenance",
 							key: "last_maintenance",
 							value: String(now),
 							updatedAt: now,

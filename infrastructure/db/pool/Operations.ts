@@ -1,4 +1,5 @@
 import { sql, type Transaction } from "kysely";
+import { logger } from "../../util/Logger.js";
 import type { Schema } from "../Config.js";
 import { isIncrement, normalizeWhere, type WriteOp } from "./types.js";
 
@@ -151,10 +152,10 @@ export async function executeBulkInsert(trx: Transaction<Schema>, table: keyof S
 export async function executeSingleOp(trx: Transaction<Schema>, op: WriteOp) {
 	const conditions = normalizeWhere(op.where);
 	if (op.type === "insert" && op.values) {
-		console.log(`[DbPool] ↳ 📝 INSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
+		logger.debug(`[DbPool] ↳ 📝 INSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
 		await trx.insertInto(op.table).values(op.values as never).execute();
 	} else if (op.type === "upsert" && op.values) {
-		console.log(`[DbPool] ↳ 🔄 UPSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
+		logger.debug(`[DbPool] ↳ 🔄 UPSERT INTO ${op.table} values: ${JSON.stringify(Object.keys(op.values))}`);
 		// Modern Architecture: Support flexible conflict targets (defaulting to 'id')
 		const query = trx.insertInto(op.table).values(op.values as never).onConflict((oc) => {
 			let builder = oc;
