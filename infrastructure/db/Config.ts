@@ -99,6 +99,26 @@ export function getActiveShards(): string[] {
 	return Array.from(_dbs.keys());
 }
 
+/**
+ * Level 11: Atomic Termination Engine.
+ * Physically closes all SQLite connection handles to ensure zero resource leakage.
+ */
+export async function closeAllShards() {
+	for (const [shardId, db] of _dbs.entries()) {
+		try {
+			// Ensure WAL checkpointing before hard closure if possible
+			// (Though BufferedDbPool should have done it already)
+			await db.destroy();
+			_dbs.delete(shardId);
+			_rawDbs.delete(shardId);
+			_initPromises.delete(shardId);
+			_isInitialized.delete(shardId);
+		} catch (e) {
+			console.error(`[Config] Failed to close shard ${shardId}:`, e);
+		}
+	}
+}
+
 async function applyPragmas(db: Kysely<Schema>) {
 	const execute = (q: string) => db.executeQuery(CompiledQuery.raw(q));
 	await execute("PRAGMA journal_mode = WAL;");
@@ -252,14 +272,12 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS claims (
-    id TEXT PRIMARY KEY,
+    path TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     branch TEXT NOT NULL,
-    path TEXT NOT NULL,
     author TEXT NOT NULL,
     timestamp BIGINT NOT NULL,
-    expiresAt BIGINT NOT NULL,
-    UNIQUE(path)
+    expiresAt BIGINT NOT NULL
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS telemetry (
@@ -286,6 +304,8 @@ async function initializeSchema(db: Kysely<Schema>) {
 
 	// Indices
 	await execute(`CREATE INDEX IF NOT EXISTS idx_nodes_repo ON nodes(repoPath)`);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parentId)`);
+	await execute(`CREATE INDEX IF NOT EXISTS idx_nodes_repo_parent ON nodes(repoPath, parentId)`);
 	await execute(
 		`CREATE INDEX IF NOT EXISTS idx_branches_repo ON branches(repoPath)`,
 	);

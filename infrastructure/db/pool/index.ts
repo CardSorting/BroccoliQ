@@ -1,4 +1,4 @@
-import { getDb, getRawDb } from "../Config.js";
+import { getDb, getRawDb, closeAllShards, getActiveShards } from "../Config.js";
 import type { Schema } from "../Config.js";
 import { logger } from "../../util/Logger.js";
 import { Locker } from "./Locker.js";
@@ -8,6 +8,7 @@ import { applyOpsToResults, postProcessResults } from "./QueryEngine.js";
 import { ShardState } from "./ShardState.js";
 import { isIncrement, normalizeWhere } from "./types.js";
 import type { Increment, WhereCondition, WriteOp } from "./types.js";
+import { CompiledQuery } from "kysely";
 import type { Kysely } from "kysely";
 
 /**
@@ -143,7 +144,15 @@ export class BufferedDbPool {
 		}
 		
 		const duration = performance.now() - startTime;
-		this.getShard(op.shardId || "main").recordLatency("enqueue", duration);
+		const shard = this.getShard(op.shardId || "main");
+		shard.recordLatency("enqueue", duration);
+
+		// Level 11: Memory Backpressure
+		// If the shard's active buffer is overloaded, we wait for a moment 
+		// to allow the flusher to catch up. This prevents OOM in write-heavy bursts.
+		while (shard.isOverloaded()) {
+			await new Promise(resolve => setTimeout(resolve, 100));
+		}
 	}
 
 
@@ -345,16 +354,30 @@ export class BufferedDbPool {
 		this.flushInterval = null;
 		this.cleanupInterval = null;
 
-		// Final authoritative flush
+		// Final authoritative flush and physical connection closure
 		try {
 			await this.flush();
-			logger.info("[DbPool] Final synchronization successfully committed.");
+			
+			// Level 11: WAL Checkpointing (Physically merge -wal files)
+			const activeShards = getActiveShards();
+			for (const shardId of activeShards) {
+				try {
+					const db = await this.getDb(shardId);
+					const result = await db.executeQuery(CompiledQuery.raw("PRAGMA wal_checkpoint(TRUNCATE);"));
+					logger.info(`[DbPool] Shard ${shardId} checkpointed: ${JSON.stringify(result.rows[0])}`);
+				} catch (e) {
+					logger.error(`[DbPool] Failed to checkpoint shard ${shardId}:`, e);
+				}
+			}
+			
+			logger.info("[DbPool] Final synchronization and checkpointing successfully committed.");
 		} catch (e) {
 			logger.error("[DbPool] Critical: Final synchronization failed during shutdown.", e);
 		}
 
+		await closeAllShards();
 		this.locker.destroy();
-		logger.info("[DbPool] Physical resources released. System Offline.");
+		logger.info("[DbPool] Physical resources released (Level 11). System Offline.");
 	}
 }
 

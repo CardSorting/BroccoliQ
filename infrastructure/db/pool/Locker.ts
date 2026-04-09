@@ -22,20 +22,18 @@ export class Locker {
 		const expiresAt = now + ttlMs;
 
 		try {
-			// 1. Clean up expired locks first (Direct)
+			// 1. Level 11: Axiomatic Atomic Claim
+			// Since 'path' is now the PRIMARY KEY, a single INSERT is truly atomic.
+			// We check for expired locks first, then attempt to claim.
 			await db.deleteFrom("claims" as any).where("expiresAt", "<", now as any).execute();
 
-			// 2. Atomic claim attempt (Direct I/O - Level 2)
-			// We use direct Kysely here because locking coordination requires 
-			// immediate database state acknowledgement, not buffered Level 7 eventual consistency.
 			await db.insertInto("claims" as any).values({
-				id: Math.random().toString(36).substring(7), // Simple ID
 				path: resource,
+				repoPath: "global",
+				branch: "main",
 				author,
 				timestamp: now,
 				expiresAt,
-				repoPath: "global",
-				branch: "main",
 			} as any).execute();
 
 			// 3. Start Heartbeat

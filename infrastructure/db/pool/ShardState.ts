@@ -11,6 +11,12 @@ export class ShardState {
 	public activeSize = 0;
 	public inFlightSize = 0;
 	
+	private static readonly MAX_BUFFER_SIZE = 10000;
+
+	public isOverloaded(): boolean {
+		return this.activeSize > ShardState.MAX_BUFFER_SIZE;
+	}
+	
 	/**
 	 * Level 7: Memory-First Indexing
 	 * status -> id -> op
