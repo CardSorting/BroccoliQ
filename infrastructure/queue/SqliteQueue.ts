@@ -1,11 +1,10 @@
+import * as crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+import { BufferedDbPool, dbPool } from "../db/pool/index.js";
+import { logger } from "../util/Logger.js";
 
 // Hardened Infrastructure: Support high-concurrency worker pools
 EventEmitter.defaultMaxListeners = 1000;
-
-import * as crypto from "node:crypto";
-import { BufferedDbPool, dbPool } from "../db/pool/index.js";
-
 
 export interface QueueJob<T> {
 	id: string;
@@ -256,17 +255,27 @@ export class SqliteQueue<T> {
 
 			const nowMs = Date.now();
 
-			const mappedJobs = jobs.map((job) => ({
-				...job,
-				payload:
-					typeof job.payload === "string" &&
-					(job.payload.startsWith("{") || job.payload.startsWith("["))
-						? (JSON.parse(job.payload) as T)
-						: (job.payload as T),
-				updatedAt: nowMs,
-				attempts: job.attempts + 1,
-				status: "processing" as const,
-			})) as unknown as QueueJob<T>[];
+			const mappedJobs = jobs.map((job) => {
+				let payload: T;
+				try {
+					payload =
+						typeof job.payload === "string" &&
+						(job.payload.startsWith("{") || job.payload.startsWith("["))
+							? (JSON.parse(job.payload) as T)
+							: (job.payload as T);
+				} catch (e) {
+					logger.error(`[SqliteQueue] Corrupt payload detected for job ${job.id}. Using raw string.`, e);
+					payload = job.payload as unknown as T;
+				}
+				
+				return {
+					...job,
+					payload,
+					updatedAt: nowMs,
+					attempts: job.attempts + 1,
+					status: "processing" as const,
+				};
+			}) as unknown as QueueJob<T>[];
 
 			// Split into immediate return and local buffer
 			const toBuffer = mappedJobs.slice(limit);
@@ -304,11 +313,8 @@ export class SqliteQueue<T> {
 
 			await dbPool.commitWork(agentId);
 			return mappedJobs.slice(0, limit);
-		} catch (e) {
-			// Rollback: In write-behind, discard the shadow by expiring it or deleting it.
-			// The modern API lets shadows expire, but we can explicitly commit empty to clear or just let it be.
-			// Actually, for simplicity and safety, we just re-throw.
-			throw e;
+		} finally {
+			// Ensure we always have cleanup if needed
 		}
 		} catch (e) {
 			console.error("[SqliteQueue] DequeueBatch failed:", e);

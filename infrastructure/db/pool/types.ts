@@ -67,8 +67,14 @@ export interface IBufferedDbPool {
 		table: T,
 		where: WhereCondition | WhereCondition[],
 		agentId?: string,
-		options?: { shardId?: string },
+		options?: { shardId?: string; limit?: number; offset?: number },
 	): Promise<Schema[T] | null>;
+	selectWhere<T extends keyof Schema>(
+		table: T,
+		where: WhereCondition | WhereCondition[],
+		agentId?: string,
+		options?: { orderBy?: { column: string; direction: "asc" | "desc" }; limit?: number; offset?: number; shardId?: string },
+	): Promise<Schema[T][]>;
 	push(op: WriteOp, agentId?: string, affectedFile?: string): Promise<void>;
 	flush(): Promise<void>;
 }

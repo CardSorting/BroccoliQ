@@ -91,9 +91,21 @@ export async function executeChunkedRawInsert(
 	const isUpsert = firstOp.type === "upsert";
 	let conflictClause = "";
 	if (isUpsert) {
-		const target = Array.isArray(firstOp.conflictTarget) 
-			? firstOp.conflictTarget.map(t => `"${t}"`).join(",") 
-			: `"${firstOp.conflictTarget || (["settings", "queue_settings"].includes(table) ? "key" : "id")}"`;
+		let target = "";
+		if (firstOp.conflictTarget) {
+			target = Array.isArray(firstOp.conflictTarget) 
+				? firstOp.conflictTarget.map(t => `"${t}"`).join(",") 
+				: `"${firstOp.conflictTarget}"`;
+		} else {
+			// Hardened Logic: Detect composite PK tables
+			if (table === "branches" || table === "tags") {
+				target = '"repoPath","name"';
+			} else if (["settings", "queue_settings"].includes(table)) {
+				target = '"key"';
+			} else {
+				target = '"id"';
+			}
+		}
 		const updates = columns.map(col => `"${col}"=excluded."${col}"`).join(",");
 		conflictClause = ` ON CONFLICT(${target}) DO UPDATE SET ${updates}`;
 	}
@@ -127,7 +139,16 @@ export async function executeBulkInsert(trx: Transaction<Schema>, table: keyof S
 	let flushed = 0;
 	
 	const isUpsert = firstOp.type === "upsert";
-	const conflictTarget = firstOp.conflictTarget || (["settings", "queue_settings"].includes(table) ? "key" : "id");
+	let conflictTarget = firstOp.conflictTarget;
+	if (!conflictTarget) {
+		if (table === "branches" || table === "tags") {
+			conflictTarget = ["repoPath", "name"];
+		} else if (["settings", "queue_settings"].includes(table)) {
+			conflictTarget = "key";
+		} else {
+			conflictTarget = "id";
+		}
+	}
 
 	for (let i = 0; i < group.length; i += CHUNK_SIZE) {
 		const chunk = group.slice(i, i + CHUNK_SIZE);
@@ -161,9 +182,17 @@ export async function executeSingleOp(trx: Transaction<Schema>, op: WriteOp) {
 			let builder = oc;
 			if (Array.isArray(op.conflictTarget)) {
 				builder = builder.columns(op.conflictTarget as never);
+			} else if (op.conflictTarget) {
+				builder = builder.column(op.conflictTarget as never);
 			} else {
-				const target = op.conflictTarget || (["settings", "queue_settings"].includes(op.table) ? "key" : "id");
-				builder = builder.column(target as never);
+				// Hardened Logic: Detect composite PK tables
+				if (op.table === "branches" || op.table === "tags") {
+					builder = builder.columns(["repoPath", "name"] as never);
+				} else if (["settings", "queue_settings"].includes(op.table)) {
+					builder = builder.column("key" as never);
+				} else {
+					builder = builder.column("id" as never);
+				}
 			}
 			return builder.doUpdateSet(op.values as never);
 		});

@@ -1,6 +1,6 @@
-import type { Kysely } from "kysely";
+import { getDb, getRawDb } from "../Config.js";
+import type { Schema } from "../Config.js";
 import { logger } from "../../util/Logger.js";
-import { getDb, getRawDb, type Schema } from "../Config.js";
 import { Locker } from "./Locker.js";
 import { Mutex } from "./Mutex.js";
 import { executeBulkInsert, executeChunkedRawInsert, executeSingleOp, groupOps } from "./Operations.js";
@@ -8,6 +8,7 @@ import { applyOpsToResults, postProcessResults } from "./QueryEngine.js";
 import { ShardState } from "./ShardState.js";
 import { isIncrement, normalizeWhere } from "./types.js";
 import type { Increment, WhereCondition, WriteOp } from "./types.js";
+import type { Kysely } from "kysely";
 
 /**
  * BufferedDbPool provides a high-performance, sharded, asynchronous write-behind layer.
@@ -257,7 +258,7 @@ export class BufferedDbPool {
 		table: T,
 		where: WhereCondition | WhereCondition[],
 		agentId?: string,
-		options?: { orderBy?: { column: string; direction: "asc" | "desc" }; limit?: number; shardId?: string },
+		options?: { orderBy?: { column: string; direction: "asc" | "desc" }; limit?: number; offset?: number; shardId?: string },
 	): Promise<Schema[T][]> {
 		const shardId = options?.shardId || "main";
 		const shard = this.getShard(shardId);
@@ -267,12 +268,15 @@ export class BufferedDbPool {
 		const release = await this.stateMutex.acquire();
 		try {
 			// Level 2: Load from Disk
-			let query: any = db.selectFrom(table as never).selectAll();
+			let query = db.selectFrom(table as any).selectAll() as any;
 			for (const cond of conditions) {
 				const op = cond.operator || "=";
-				query = query.where(cond.column as never, op as any, cond.value as any);
+				query = query.where(cond.column as any, op as any, cond.value as any);
 			}
-			const diskResults = await (query as any).execute() as Schema[T][];
+			if (options?.limit) query = query.limit(options.limit);
+			if (options?.offset) query = query.offset(options.offset);
+
+			const diskResults = await query.execute() as Schema[T][];
 
 			// Level 7: Apply Memory Buffers
 			const finalResults = [...diskResults];
@@ -309,7 +313,7 @@ export class BufferedDbPool {
 
 	public async warmupTable<T extends keyof Schema>(table: T, statusCol: string, statusValue: string, shardId: string = "main"): Promise<number> {
 		const db = await this.getDb(shardId);
-		const rows = await db.selectFrom(table as never).where(statusCol as never, "=", statusValue as any).selectAll().execute();
+		const rows = await db.selectFrom(table as any).where(statusCol as any, "=", statusValue as any).selectAll().execute() as Schema[T][];
 		if (rows.length === 0) return 0;
 
 		const shard = this.getShard(shardId);

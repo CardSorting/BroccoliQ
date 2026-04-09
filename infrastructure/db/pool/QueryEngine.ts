@@ -1,5 +1,6 @@
 import type { Schema } from "../Config.js";
-import { isIncrement, normalizeWhere, type WhereCondition, type WriteOp } from "./types.js";
+import { isIncrement, normalizeWhere } from "./types.js";
+import type { WhereCondition, WriteOp } from "./types.js";
 
 /**
  * Level 7: Memory-First Query Engine.
@@ -65,8 +66,8 @@ export function applySingleOp<T extends keyof Schema>(
 			if (opStr === "IN") {
 				if (c.value instanceof Set) return (c.value as Set<unknown>).has(val);
 				if (Array.isArray(c.value)) {
-					const s = new Set(c.value as any[]);
-					(c as any).value = s; // Optimization: Cache the set on the condition itself
+					const s = new Set<unknown>(c.value);
+					(c as { value: unknown }).value = s; // Optimization: Cache the set on the condition itself
 					return s.has(val);
 				}
 				return val === c.value;
@@ -128,7 +129,7 @@ export function applySingleOp<T extends keyof Schema>(
 }
 
 function applyValues<T>(existing: T, values: Record<string, unknown>, hasIncrements: boolean): T {
-	const next = { ...existing } as any;
+	const next = { ...existing } as Record<string, unknown>;
 	for (const [k, v] of Object.entries(values)) {
 		if (hasIncrements && isIncrement(v)) {
 			next[k] = (Number(next[k]) || 0) + v.value;
@@ -144,21 +145,22 @@ function applyValues<T>(existing: T, values: Record<string, unknown>, hasIncreme
  */
 export function postProcessResults<T>(
 	results: T[],
-	options?: { orderBy?: { column: string; direction: "asc" | "desc" }; limit?: number },
+	options?: { orderBy?: { column: string; direction: "asc" | "desc" }; limit?: number; offset?: number },
 ): T[] {
 	let final = results;
 	if (options?.orderBy) {
 		const col = options.orderBy.column;
 		const dir = options.orderBy.direction;
-		final.sort((a: any, b: any) => {
-			const valA = a[col];
-			const valB = b[col];
+		final.sort((a, b) => {
+			const valA = (a as Record<string, unknown>)[col];
+			const valB = (b as Record<string, unknown>)[col];
 			if (valA === undefined || valB === undefined || valA === null || valB === null) return 0;
 			if (valA < valB) return dir === "asc" ? -1 : 1;
 			if (valA > valB) return dir === "asc" ? 1 : -1;
 			return 0;
 		});
 	}
+	if (options?.offset) final = final.slice(options.offset);
 	if (options?.limit) final = final.slice(0, options.limit);
 	return final;
 }

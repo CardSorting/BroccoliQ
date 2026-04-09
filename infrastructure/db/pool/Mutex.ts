@@ -30,6 +30,8 @@ export class Mutex {
 	private release() {
 		const next = this.queue.shift();
 		if (next) {
+			// Hand off the lock immediately to the next in line
+			// Avoid setting 'locked = false' to prevent new acquire() calls from stealing it
 			next();
 		} else {
 			this.locked = false;

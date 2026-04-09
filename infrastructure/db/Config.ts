@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CompiledQuery, Kysely, SqliteDialect } from "kysely";
-import { type Schema } from "./DatabaseSchema.js";
+import type { Schema } from "./DatabaseSchema.js";
 export type { Schema };
 
 const isBun = !!(globalThis as { Bun?: unknown }).Bun;
@@ -48,14 +48,15 @@ export async function getDb(shardId: string = "main"): Promise<Kysely<Schema>> {
 				const { BunSqliteDialect } = await import("kysely-bun-sqlite");
 				rawDb = new Database(shardPath);
 				dialect = new BunSqliteDialect({
-					database: rawDb as any,
+					database: rawDb,
 				});
 			} else {
 				// Production-grade Node Support
-				// @ts-ignore
-				const Database = (await import("better-sqlite3")).default;
+				// biome-ignore lint/suspicious/noExplicitAny: Dynamic import requires any
+				const Database = (await import("better-sqlite3") as any).default;
 				rawDb = new Database(shardPath);
 				dialect = new SqliteDialect({
+					// biome-ignore lint/suspicious/noExplicitAny: Kysely database type mismatch
 					database: rawDb as any,
 				});
 			}
@@ -112,7 +113,7 @@ async function applyPragmas(db: Kysely<Schema>) {
 async function ensureColumn(db: Kysely<Schema>, table: string, column: string, definition: string) {
 	try {
 		const info = await db.executeQuery(CompiledQuery.raw(`PRAGMA table_info(${table})`));
-		const exists = info.rows.some((row: any) => row.name === column);
+		const exists = info.rows.some((row) => (row as { name: string }).name === column);
 		if (!exists) {
 			console.warn(`[DbPool] 🛡️ Self-Healing: Missing column detected. Adding '${column}' to '${table}'...`);
 			await db.executeQuery(CompiledQuery.raw(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`));
@@ -139,8 +140,8 @@ async function initializeSchema(db: Kysely<Schema>) {
 	try {
 		for (const table of ["settings", "queue_settings"]) {
 			const info = await db.executeQuery(CompiledQuery.raw(`PRAGMA table_info(${table})`));
-			const hasName = info.rows.some((row: any) => row.name === "name");
-			const hasKey = info.rows.some((row: any) => row.name === "key");
+			const hasName = info.rows.some((row) => (row as { name: string }).name === "name");
+			const hasKey = info.rows.some((row) => (row as { name: string }).name === "key");
 			if (hasName && !hasKey) {
 				console.warn(`[DbPool] 🛡️ Self-Healing: Migrating column 'name' to 'key' in '${table}'...`);
 				await db.executeQuery(CompiledQuery.raw(`ALTER TABLE ${table} RENAME COLUMN name TO key`));
@@ -179,23 +180,21 @@ async function initializeSchema(db: Kysely<Schema>) {
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS branches (
-    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
     isEphemeral INTEGER DEFAULT 0,
     createdAt BIGINT,
     expiresAt BIGINT,
-    UNIQUE(repoPath, name)
+    PRIMARY KEY(repoPath, name)
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS tags (
-    id TEXT PRIMARY KEY,
     repoPath TEXT NOT NULL,
     name TEXT NOT NULL,
     head TEXT NOT NULL,
     createdAt BIGINT,
-    UNIQUE(repoPath, name)
+    PRIMARY KEY(repoPath, name)
   )`);
 
 	await execute(`CREATE TABLE IF NOT EXISTS nodes (
