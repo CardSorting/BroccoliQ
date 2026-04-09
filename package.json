@@ -1,9 +1,9 @@
 {
   "name": "@noorm/broccoliq",
-  "version": "2.2.5",
+  "version": "2.3.0",
   "type": "module",
   "private": false,
-  "description": "BroccoliQ - Sharded Sovereign Hive Architecture (Level 10 Persistence)",
+  "description": "BroccoliQ - Sharded Sovereign Hive Architecture (Level 11 Axiomatic Reliability)",
   "main": "./dist/infrastructure/index.js",
   "types": "./dist/infrastructure/index.d.ts",
   "exports": {

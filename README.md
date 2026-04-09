@@ -7,7 +7,8 @@
 ---
 
 🚀 **Native to Bun**: Optimized for `bun:sqlite` with near-zero N-API overhead.
-💎 **Axiomatic Type Sovereignty (Level 10)**: Professional-grade safety via Kysely and a unified master schema.
+🛡️ **Axiomatic Reliability (Level 11)**: Hardened memory backpressure, atomic WAL checkpointing, and physical resource safety.
+💎 **Type Sovereignty (Level 10)**: Professional-grade safety via Kysely and a unified master schema.
 🛡️ **Sovereign Autonomy (Level 5)**: **Direct Consistency Locking** and self-healing for autonomous agent swarms.
 ⚡ **Event Horizon Throughput (Level 7)**: 1,000,000+ ops/sec via **Index Warming** and Reactive Circular Buffers.
 
@@ -63,7 +64,7 @@ hive.process(async (job) => {
 
 ---
 
-## 🛡️ The 10 Levels of Sovereignty
+## 🛡️ The 11 Levels of Sovereignty
 
 BroccoliQ is built on a hierarchical architecture that guarantees absolute data finality. 
 
@@ -74,6 +75,7 @@ BroccoliQ is built on a hierarchical architecture that guarantees absolute data 
 | **L7** | **Memory Indexing** | **Auth-Index** Map lookups replace slow SQL polling. |
 | **L8** | **IO Bandwidth** | Scale horizontally across physical `.db` WAL journals. |
 | **L10** | **Type Sovereignty** | Axiomatic safety via the `hive_` unified master schema. |
+| **L11** | **Axiomatic Reliability**| **Extreme Hardening**: Backpressure throttling & Atomic Shutdown. |
 
 > [!TIP]
 > Read the full [CONCEPTS.md](CONCEPTS.md) to understand the "Sovereign Manifesto" and the physics behind our speed.
@@ -114,6 +116,7 @@ graph TD
 - 🌳 **CONCEPTS.md** → Plain English guide to the 10 Levels of Sovereignty.
 - 👨‍🍳 **USAGE.md** → The ultimate API Cheat Sheet and production patterns.
 - 🥘 **COOKBOOK.md** → Practical, copy-pasteable recipes for your agent infrastructure.
+- 🏛️ **SOVEREIGN_INFRASTRUCTURE.md** → The "Hierarchy of Hardening": Backpressure, atomic shutdown, and physical safety.
 
 ---
 
